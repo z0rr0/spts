@@ -120,7 +120,8 @@ func TestClient_Start(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	ctx = context.WithValue(ctx, ctxClientKey, server.Client())
+	// address already has properly server URL
+	//ctx = context.WithValue(ctx, ctxClientKey, server.Client())
 
 	var b bytes.Buffer
 	ctx = context.WithValue(ctx, ctxWriterKey, &b)
@@ -141,5 +142,28 @@ func TestClient_Start(t *testing.T) {
 
 	if !strings.HasPrefix(lines[1], "Upload speed:") {
 		t.Error("failed prefix for upload")
+	}
+
+	client.noDot = false
+	err = client.Start(ctx)
+	if err != nil {
+		t.Errorf("failed to start client: %v", err)
+	}
+}
+
+func TestClient_String(t *testing.T) {
+	client, err := New("localhost", 8080, 100*time.Millisecond, false)
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	expected := "\n"
+	if got := client.newLine(); got != expected {
+		t.Errorf("want %s, got %s", expected, got)
+	}
+
+	expected = "address: http://localhost:8080, timeout: 100ms"
+	if got := client.String(); got != expected {
+		t.Errorf("want %q, got %q", expected, got)
 	}
 }

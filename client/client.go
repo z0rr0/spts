@@ -18,7 +18,6 @@ type ctxType string
 
 const (
 	insecurePrefix         = "http://"
-	ctxClientKey   ctxType = "httpClient"
 	ctxWriterKey   ctxType = "writer"
 )
 
@@ -53,24 +52,14 @@ func (c *Client) String() string {
 	return fmt.Sprintf("address: %s, timeout: %s", c.address, c.timeout)
 }
 
-func (c *Client) loadContext(ctx context.Context) (*http.Client, io.Writer) {
-	var (
-		client *http.Client
-		writer io.Writer = os.Stdout
-	)
-
-	if ctxClient, ok := ctx.Value(ctxClientKey).(*http.Client); ok {
-		client = ctxClient
-	} else {
-		tr := &http.Transport{Proxy: http.ProxyFromEnvironment}
-		client = &http.Client{Transport: tr}
-	}
+func (c *Client) writer(ctx context.Context) io.Writer {
+	var writer io.Writer = os.Stdout
 
 	if ctxWriter, ok := ctx.Value(ctxWriterKey).(io.Writer); ok {
 		writer = ctxWriter
 	}
 
-	return client, writer
+	return writer
 }
 
 func (c *Client) newLine() string {
@@ -84,9 +73,12 @@ func (c *Client) newLine() string {
 // Start does a client request.
 func (c *Client) Start(ctx context.Context) error {
 	var (
-		newLine        = c.newLine()
-		client, writer = c.loadContext(ctx)
+		newLine = c.newLine()
+		writer  = c.writer(ctx)
 	)
+
+	tr := &http.Transport{Proxy: http.ProxyFromEnvironment}
+	client := &http.Client{Transport: tr}
 
 	speed, err := c.run(ctx, client, writer, c.download)
 	if err != nil {
