@@ -4,15 +4,23 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/z0rr0/spts/common"
 )
 
-const insecurePrefix = "http://"
+type ctxType string
+
+const (
+	insecurePrefix         = "http://"
+	ctxClientKey   ctxType = "httpClient"
+	ctxWriterKey   ctxType = "writer"
+)
 
 // ErrRequestFailed is returned when the request failed.
 var ErrRequestFailed = errors.New("request failed")
@@ -45,40 +53,67 @@ func (c *Client) String() string {
 	return fmt.Sprintf("address: %s, timeout: %s", c.address, c.timeout)
 }
 
+func (c *Client) loadContext(ctx context.Context) (*http.Client, io.Writer) {
+	var (
+		client *http.Client
+		writer io.Writer = os.Stdout
+	)
+
+	if ctxClient, ok := ctx.Value(ctxClientKey).(*http.Client); ok {
+		client = ctxClient
+	} else {
+		tr := &http.Transport{Proxy: http.ProxyFromEnvironment}
+		client = &http.Client{Transport: tr}
+	}
+
+	if ctxWriter, ok := ctx.Value(ctxWriterKey).(io.Writer); ok {
+		writer = ctxWriter
+	}
+
+	return client, writer
+}
+
+func (c *Client) newLine() string {
+	if c.noDot {
+		return ""
+	}
+
+	return "\n"
+}
+
 // Start does a client request.
 func (c *Client) Start(ctx context.Context) error {
-	var newLine = "\n"
-	tr := &http.Transport{Proxy: http.ProxyFromEnvironment, MaxConnsPerHost: 1}
-	client := &http.Client{Transport: tr}
+	var (
+		newLine        = c.newLine()
+		client, writer = c.loadContext(ctx)
+	)
 
-	speed, err := c.run(ctx, client, c.download)
+	speed, err := c.run(ctx, client, writer, c.download)
 	if err != nil {
 		return err
 	}
 
-	if c.noDot {
-		newLine = ""
-	}
-
-	fmt.Printf("%sDownload speed: %s\n", newLine, speed)
-
-	speed, err = c.run(ctx, client, c.upload)
+	_, err = fmt.Fprintf(writer, "%sDownload speed: %s\n", newLine, speed)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("%sUpload speed:   %s\n", newLine, speed)
+	speed, err = c.run(ctx, client, writer, c.upload)
+	if err != nil {
+		return err
+	}
 
-	return nil
+	_, err = fmt.Fprintf(writer, "%sUpload speed:   %s\n", newLine, speed)
+	return err
 }
 
 // Upload does a client POST request with body.
-func (c *Client) run(ctx context.Context, client *http.Client, handler handlerType) (string, error) {
+func (c *Client) run(ctx context.Context, client *http.Client, w io.Writer, handler handlerType) (string, error) {
 	start := time.Now()
 
 	if !c.noDot {
-		progressCh := progress(time.Second)
-		defer close(progressCh)
+		prg := newProgress(w, time.Second)
+		defer prg.done()
 	}
 
 	count, err := handler(ctx, client)
@@ -86,7 +121,7 @@ func (c *Client) run(ctx context.Context, client *http.Client, handler handlerTy
 		return "", err
 	}
 
-	return common.Speed(start, count), nil
+	return common.Speed(start, count, common.SpeedSeconds), nil
 }
 
 // download gets data from server.
@@ -141,30 +176,12 @@ func (c *Client) upload(ctx context.Context, client *http.Client) (int64, error)
 		return 0, errors.Join(ErrRequestFailed, fmt.Errorf("status: %d", resp.StatusCode))
 	}
 
+	if err = resp.Body.Close(); err != nil {
+		return 0, errors.Join(ErrRequestFailed, fmt.Errorf("close body: %w", err))
+	}
+
 	count := body.Count.Load()
 	slog.Debug("writes", "count", common.ByteSize(int(count)))
 
-	return count, resp.Body.Close()
-}
-
-// progress prints a dot every d duration until the returned channel is closed.
-func progress(d time.Duration) chan<- struct{} {
-	var (
-		ticker = time.NewTicker(d)
-		stop   = make(chan struct{})
-	)
-
-	go func() {
-		for {
-			select {
-			case <-ticker.C:
-				print(". ")
-			case <-stop:
-				ticker.Stop()
-				return
-			}
-		}
-	}()
-
-	return stop
+	return count, nil
 }

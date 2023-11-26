@@ -16,6 +16,16 @@ const (
 	GB = 1024 * MB
 )
 
+// SpeedUnit is a speed unit type.
+type SpeedUnit uint8
+
+// Available speed units.
+const (
+	SpeedMicroseconds SpeedUnit = iota
+	SpeedMilliseconds
+	SpeedSeconds
+)
+
 // Server's URLs
 const (
 	UploadURL   = "/upload"
@@ -23,8 +33,10 @@ const (
 )
 
 const (
-	maxPortNumber  uint64 = 65535
-	DefaultBufSize        = 65 * KB
+	maxPortNumber uint64 = 65535
+
+	// DefaultBufSize is a default buffer size for data transfer.
+	DefaultBufSize = 65 * KB
 )
 
 var (
@@ -61,24 +73,37 @@ func ByteSize(size int) string {
 }
 
 // Speed returns network speed as a string.
-func Speed(start time.Time, count int64) string {
+func Speed(start time.Time, count int64, unit SpeedUnit) string {
 	var (
-		s        float64
 		duration = time.Since(start)
+		speed    float64
+		name     string
 	)
 
-	if seconds := duration.Seconds(); seconds > 0 {
-		s = float64(count) / seconds
+	switch unit {
+	case SpeedMicroseconds:
+		speed = float64(duration.Microseconds())
+		name = "μs"
+	case SpeedMilliseconds:
+		speed = float64(duration.Milliseconds())
+		name = "ms"
+	default:
+		speed = duration.Seconds()
+		name = "s"
+	}
+
+	if speed > 0 {
+		speed = float64(count) / speed
 	}
 
 	switch {
-	case s < KB:
-		return fmt.Sprintf("%.2f B/s", s)
-	case s < MB:
-		return fmt.Sprintf("%.2f KB/s", s/KB)
-	case s < GB:
-		return fmt.Sprintf("%.2f MB/s", s/MB)
+	case speed < KB:
+		return fmt.Sprintf("%.2f B/%s", speed, name)
+	case speed < MB:
+		return fmt.Sprintf("%.2f KB/%s", speed/KB, name)
+	case speed < GB:
+		return fmt.Sprintf("%.2f MB/%s", speed/MB, name)
 	default:
-		return fmt.Sprintf("%.2f GB/s", s/GB)
+		return fmt.Sprintf("%.2f GB/%s", speed/GB, name)
 	}
 }

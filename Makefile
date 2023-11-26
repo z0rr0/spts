@@ -6,7 +6,8 @@ VERSION=$(firstword $(COMMIT))
 LDFLAGS=-X main.Version=$(TAG) -X main.Revision=git:$(VERSION) -X main.BuildDate=$(TS)
 DOCKER_TAG=z0rr0/spts
 
-# coverage check
+# coverage check example
+# go test -cover -v -race -coverprofile=coverage.out -trace trace.out github.com/z0rr0/spts/client
 # go tool cover -html=coverage.out
 
 all: test
