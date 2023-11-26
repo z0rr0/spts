@@ -76,7 +76,6 @@ func TestNewReader(t *testing.T) {
 		name      string
 		bufSize   int
 		ctxFunc   func() context.Context
-		overload  bool
 		expected  int
 		withError bool
 	}{
@@ -109,22 +108,17 @@ func TestNewReader(t *testing.T) {
 			withError: true,
 		},
 		{
-			name:     "overload",
-			bufSize:  10,
+			name:     "default",
+			bufSize:  DefaultBufSize,
 			ctxFunc:  func() context.Context { return context.Background() },
-			overload: true,
-			expected: 10,
+			expected: DefaultBufSize,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := tc.ctxFunc()
-			r := NewReader(ctx, tc.bufSize)
-
-			if tc.overload {
-				tc.bufSize *= 2
-			}
+			r := NewReader(ctx)
 
 			p := make([]byte, tc.bufSize)
 			n, err := r.Read(p)

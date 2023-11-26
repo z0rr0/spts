@@ -66,7 +66,6 @@ func (c *Client) newLine() string {
 	if c.dot {
 		return "\n"
 	}
-
 	return ""
 }
 
@@ -77,7 +76,11 @@ func (c *Client) Start(ctx context.Context) error {
 		writer  = c.writer(ctx)
 	)
 
-	tr := &http.Transport{Proxy: http.ProxyFromEnvironment}
+	tr := &http.Transport{
+		Proxy:           http.ProxyFromEnvironment,
+		WriteBufferSize: common.DefaultBufSize,
+		ReadBufferSize:  common.DefaultBufSize,
+	}
 	client := &http.Client{Transport: tr}
 
 	speed, err := c.run(ctx, client, writer, c.download)
@@ -150,7 +153,7 @@ func (c *Client) upload(ctx context.Context, client *http.Client) (int64, error)
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
-	body := common.NewReader(ctx, common.DefaultBufSize)
+	body := common.NewReader(ctx)
 	requestURL := c.address + common.UploadURL
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, body)
 

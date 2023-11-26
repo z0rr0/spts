@@ -86,7 +86,7 @@ func (s *Server) download(w http.ResponseWriter, r *http.Request) error {
 	ctx, cancel := context.WithTimeout(r.Context(), s.timeout)
 	defer cancel()
 
-	reader := common.NewReader(ctx, common.DefaultBufSize)
+	reader := common.NewReader(ctx)
 	count, buffer := 0, make([]byte, common.DefaultBufSize)
 
 	defer func() {

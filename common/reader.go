@@ -10,26 +10,19 @@ import (
 	"time"
 )
 
-type payload struct {
-	p   []byte
-	err error
-}
-
 // Reader is a reader that reads random generate.
 type Reader struct {
-	bufSize int
 	rnd     *rand.Rand
-	dataCh  chan payload
+	errChan chan error
 	Count   atomic.Int64 // total read bytes
 }
 
 // NewReader returns a new Reader that reads random generate
 // with the given buffer size until the context is canceled or timed out.
-func NewReader(ctx context.Context, bufSize int) *Reader {
+func NewReader(ctx context.Context) *Reader {
 	r := &Reader{
-		bufSize: bufSize,
 		rnd:     rand.New(rand.NewSource(time.Now().UnixNano())),
-		dataCh:  make(chan payload),
+		errChan: make(chan error),
 	}
 
 	go func() {
@@ -37,15 +30,15 @@ func NewReader(ctx context.Context, bufSize int) *Reader {
 			select {
 			case <-ctx.Done():
 				if err := ctx.Err(); errors.Is(err, context.DeadlineExceeded) {
-					r.dataCh <- payload{err: io.EOF}
+					r.errChan <- io.EOF
 				} else {
-					r.dataCh <- payload{err: err}
+					r.errChan <- err
 				}
 
-				close(r.dataCh)
+				close(r.errChan)
 				return
 			default:
-				r.dataCh <- r.generate()
+				r.errChan <- nil
 			}
 		}
 	}()
@@ -53,24 +46,20 @@ func NewReader(ctx context.Context, bufSize int) *Reader {
 	return r
 }
 
-func (r *Reader) generate() payload {
-	p := make([]byte, r.bufSize)
-	n, err := r.rnd.Read(p)
-
-	return payload{p: p[:n], err: err}
-}
-
 // Read implements the io.Reader interface.
 func (r *Reader) Read(p []byte) (int, error) {
-	item := <-r.dataCh
+	err := <-r.errChan
 
-	if item.err != nil {
-		return 0, item.err
+	if err != nil {
+		return 0, err
 	}
 
-	n := copy(p, item.p)
-	r.Count.Add(int64(n))
+	n, err := r.rnd.Read(p)
+	if err != nil {
+		return 0, err
+	}
 
+	r.Count.Add(int64(n))
 	return n, nil
 }
 

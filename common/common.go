@@ -36,7 +36,7 @@ const (
 	maxPortNumber uint64 = 65535
 
 	// DefaultBufSize is a default buffer size for generate transfer.
-	DefaultBufSize = 65 * KB
+	DefaultBufSize = 32 * KB
 )
 
 var (
