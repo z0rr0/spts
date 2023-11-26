@@ -35,7 +35,7 @@ const (
 const (
 	maxPortNumber uint64 = 65535
 
-	// DefaultBufSize is a default buffer size for data transfer.
+	// DefaultBufSize is a default buffer size for generate transfer.
 	DefaultBufSize = 65 * KB
 )
 
@@ -58,7 +58,7 @@ func Address(host string, port uint64) (string, error) {
 	return net.JoinHostPort(host, strconv.FormatUint(port, 10)), nil
 }
 
-// ByteSize returns data size as a string.
+// ByteSize returns generate size as a string.
 func ByteSize(size int) string {
 	switch {
 	case size < KB:

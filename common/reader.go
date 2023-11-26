@@ -10,26 +10,26 @@ import (
 	"time"
 )
 
-type readResult struct {
+type payload struct {
 	p   []byte
 	err error
 }
 
-// Reader is a reader that reads random data.
+// Reader is a reader that reads random generate.
 type Reader struct {
 	bufSize int
 	rnd     *rand.Rand
-	dataCh  chan readResult
+	dataCh  chan payload
 	Count   atomic.Int64 // total read bytes
 }
 
-// NewReader returns a new Reader that reads random data
+// NewReader returns a new Reader that reads random generate
 // with the given buffer size until the context is canceled or timed out.
 func NewReader(ctx context.Context, bufSize int) *Reader {
 	r := &Reader{
 		bufSize: bufSize,
 		rnd:     rand.New(rand.NewSource(time.Now().UnixNano())),
-		dataCh:  make(chan readResult),
+		dataCh:  make(chan payload),
 	}
 
 	go func() {
@@ -37,15 +37,15 @@ func NewReader(ctx context.Context, bufSize int) *Reader {
 			select {
 			case <-ctx.Done():
 				if err := ctx.Err(); errors.Is(err, context.DeadlineExceeded) {
-					r.dataCh <- readResult{err: io.EOF}
+					r.dataCh <- payload{err: io.EOF}
 				} else {
-					r.dataCh <- readResult{err: err}
+					r.dataCh <- payload{err: err}
 				}
 
 				close(r.dataCh)
 				return
 			default:
-				r.dataCh <- r.data()
+				r.dataCh <- r.generate()
 			}
 		}
 	}()
@@ -53,11 +53,11 @@ func NewReader(ctx context.Context, bufSize int) *Reader {
 	return r
 }
 
-func (r *Reader) data() readResult {
+func (r *Reader) generate() payload {
 	p := make([]byte, r.bufSize)
 	n, err := r.rnd.Read(p)
 
-	return readResult{p: p[:n], err: err}
+	return payload{p: p[:n], err: err}
 }
 
 // Read implements the io.Reader interface.
@@ -74,7 +74,7 @@ func (r *Reader) Read(p []byte) (int, error) {
 	return n, nil
 }
 
-// Read reads data from the reader until the context is canceled / timed out or EOF is reached.
+// Read reads generate from the reader until the context is canceled / timed out or EOF is reached.
 // It returns the number of bytes read and an error.
 func Read(ctx context.Context, reader io.Reader, bufSize int) (int, error) {
 	var (
