@@ -19,6 +19,8 @@ const shutdownTimeout = 10 * time.Second
 // ErrResponseFailed is returned when the response failed.
 var ErrResponseFailed = errors.New("response failed")
 
+type handlerType func(w http.ResponseWriter, r *http.Request) error
+
 // Server is a server data.
 type Server struct {
 	address string
@@ -70,48 +72,12 @@ func (s *Server) createHandlers() *http.Server {
 		MaxHeaderBytes: common.KB,
 	}
 
-	handlers := map[string]func(w http.ResponseWriter, r *http.Request) error{
+	handlers := map[string]handlerType{
 		common.UploadURL:   s.upload,
 		common.DownloadURL: s.download,
 	}
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		var (
-			start = time.Now()
-			code  = http.StatusOK
-			url   = strings.TrimRight(r.URL.Path, "/ ")
-		)
-		slog.Info("request received", "method", r.Method, "url", url, "remoteAddr", r.RemoteAddr)
-
-		defer func() {
-			if code != http.StatusOK {
-				http.Error(w, "ERROR", code)
-			}
-
-			slog.Info(
-				"request done",
-				"method", r.Method, "code", code, "duration", time.Since(start), "remoteAddr", r.RemoteAddr,
-			)
-		}()
-
-		handler, ok := handlers[url]
-		if !ok {
-			code = http.StatusNotFound
-			return
-		}
-
-		err := handler(w, r)
-		if err != nil {
-			slog.Error("request", "error", err)
-			if strings.Contains(err.Error(), "http: request body too large") {
-				code = http.StatusRequestEntityTooLarge
-			} else {
-				code = http.StatusInternalServerError
-			}
-			return
-		}
-	})
-
+	http.HandleFunc("/", rootHandler(handlers))
 	return srv
 }
 
@@ -171,4 +137,43 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) error {
 
 	slog.Debug("reads", "count", countSize)
 	return nil
+}
+
+func rootHandler(handlers map[string]handlerType) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var (
+			start = time.Now()
+			code  = http.StatusOK
+			url   = strings.TrimRight(r.URL.Path, "/ ")
+		)
+		slog.Info("request received", "method", r.Method, "url", url, "remoteAddr", r.RemoteAddr)
+
+		defer func() {
+			if code != http.StatusOK {
+				http.Error(w, "ERROR", code)
+			}
+
+			slog.Info(
+				"request done",
+				"method", r.Method, "code", code, "duration", time.Since(start), "remoteAddr", r.RemoteAddr,
+			)
+		}()
+
+		handler, ok := handlers[url]
+		if !ok {
+			code = http.StatusNotFound
+			return
+		}
+
+		err := handler(w, r)
+		if err != nil {
+			slog.Error("request", "error", err)
+			if strings.Contains(err.Error(), "http: request body too large") {
+				code = http.StatusRequestEntityTooLarge
+			} else {
+				code = http.StatusInternalServerError
+			}
+			return
+		}
+	}
 }
