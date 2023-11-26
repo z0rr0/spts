@@ -101,19 +101,18 @@ func (c *Client) Start(ctx context.Context) error {
 
 // Upload does a client POST request with body.
 func (c *Client) run(ctx context.Context, client *http.Client, w io.Writer, handler handlerType) (string, error) {
-	start := time.Now()
-
 	if !c.noDot {
 		prg := newProgress(w, time.Second)
 		defer prg.done()
 	}
 
+	start := time.Now()
 	count, err := handler(ctx, client)
 	if err != nil {
 		return "", err
 	}
 
-	return common.Speed(start, count, common.SpeedSeconds), nil
+	return common.Speed(time.Since(start), count, common.SpeedSeconds), nil
 }
 
 // download gets data from server.

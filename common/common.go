@@ -72,12 +72,11 @@ func ByteSize(size int) string {
 	}
 }
 
-// Speed returns network speed as a string.
-func Speed(start time.Time, count int64, unit SpeedUnit) string {
+// Speed returns network speed as a string and
+func Speed(duration time.Duration, count int64, unit SpeedUnit) string {
 	var (
-		duration = time.Since(start)
-		speed    float64
-		name     string
+		speed float64
+		name  = "s"
 	)
 
 	switch unit {
@@ -89,7 +88,6 @@ func Speed(start time.Time, count int64, unit SpeedUnit) string {
 		name = "ms"
 	default:
 		speed = duration.Seconds()
-		name = "s"
 	}
 
 	if speed > 0 {

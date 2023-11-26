@@ -76,30 +76,28 @@ func TestSpeed(t *testing.T) {
 	var delay = 10 * time.Millisecond
 
 	testCases := []struct {
-		name  string
-		delay time.Duration
-		count int64
-		unit  SpeedUnit
-		want  string
+		name     string
+		duration time.Duration
+		count    int64
+		unit     SpeedUnit
+		want     string
 	}{
-		{name: "zero_with_seconds", delay: 0, count: 0, unit: SpeedSeconds, want: "0.00 B/s"},
-		{name: "zero_with_milliseconds", delay: 0, count: 0, unit: SpeedMilliseconds, want: "0.00 B/ms"},
-		{name: "zero_with_microseconds", delay: 0, count: 0, unit: SpeedMicroseconds, want: "0.00 B/μs"},
-		{name: "microseconds", delay: 5000 * time.Microsecond, count: 50, unit: SpeedMicroseconds, want: "0.01 B/μs"},
-		{name: "milliseconds", delay: delay, count: 57, unit: SpeedMilliseconds, want: "5.70 B/ms"},
-		{name: "seconds", delay: time.Second, count: 5, unit: SpeedSeconds, want: "5.00 B/s"},
-		{name: "kilobytes", delay: delay, count: 105 * KB, unit: SpeedMilliseconds, want: "10.50 KB/ms"},
-		{name: "megabytes", delay: delay, count: 105 * MB, unit: SpeedMilliseconds, want: "10.50 MB/ms"},
-		{name: "gigabytes", delay: delay, count: 105 * GB, unit: SpeedMilliseconds, want: "10.50 GB/ms"},
+		{name: "zero_with_seconds", duration: 0, count: 0, unit: SpeedSeconds, want: "0.00 B/s"},
+		{name: "zero_with_milliseconds", duration: 0, count: 0, unit: SpeedMilliseconds, want: "0.00 B/ms"},
+		{name: "zero_with_microseconds", duration: 0, count: 0, unit: SpeedMicroseconds, want: "0.00 B/μs"},
+		{name: "microseconds", duration: 5000 * time.Microsecond, count: 50, unit: SpeedMicroseconds, want: "0.01 B/μs"},
+		{name: "milliseconds", duration: delay, count: 57, unit: SpeedMilliseconds, want: "5.70 B/ms"},
+		{name: "seconds", duration: time.Second, count: 21, unit: SpeedSeconds, want: "21.00 B/s"},
+		{name: "kilobytes", duration: delay, count: 105 * KB, unit: SpeedMilliseconds, want: "10.50 KB/ms"},
+		{name: "megabytes", duration: delay, count: 106 * MB, unit: SpeedMilliseconds, want: "10.60 MB/ms"},
+		{name: "gigabytes", duration: delay, count: 107 * GB, unit: SpeedMilliseconds, want: "10.70 GB/ms"},
 	}
 
 	for i := range testCases {
 		tc := testCases[i]
-		t.Run(tc.name, func(t *testing.T) {
-			start := time.Now()
-			time.Sleep(tc.delay)
 
-			if got := Speed(start, tc.count, tc.unit); got != tc.want {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := Speed(tc.duration, tc.count, tc.unit); got != tc.want {
 				t.Errorf("want %s, got %s", tc.want, got)
 			}
 		})
