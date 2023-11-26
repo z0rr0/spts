@@ -30,11 +30,11 @@ type handlerType func(context.Context, *http.Client) (int64, error)
 type Client struct {
 	address string
 	timeout time.Duration
-	noDot   bool
+	dot     bool
 }
 
 // New creates a new client.
-func New(host string, port uint64, timeout time.Duration, noDot bool) (*Client, error) {
+func New(host string, port uint64, timeout time.Duration, dot bool) (*Client, error) {
 	address, err := common.Address(host, port)
 	if err != nil {
 		return nil, err
@@ -44,7 +44,7 @@ func New(host string, port uint64, timeout time.Duration, noDot bool) (*Client, 
 		address = insecurePrefix + address
 	}
 
-	return &Client{address: strings.TrimRight(address, "/ "), timeout: timeout, noDot: noDot}, nil
+	return &Client{address: strings.TrimRight(address, "/ "), timeout: timeout, dot: dot}, nil
 }
 
 // String implements Stringer interface.
@@ -63,11 +63,11 @@ func (c *Client) writer(ctx context.Context) io.Writer {
 }
 
 func (c *Client) newLine() string {
-	if c.noDot {
-		return ""
+	if c.dot {
+		return "\n"
 	}
 
-	return "\n"
+	return ""
 }
 
 // Start does a client request.
@@ -101,7 +101,7 @@ func (c *Client) Start(ctx context.Context) error {
 
 // Upload does a client POST request with body.
 func (c *Client) run(ctx context.Context, client *http.Client, w io.Writer, handler handlerType) (string, error) {
-	if !c.noDot {
+	if c.dot {
 		prg := newProgress(w, time.Second)
 		defer prg.done()
 	}

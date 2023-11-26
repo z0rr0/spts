@@ -111,7 +111,7 @@ func TestClient_Start(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := New(server.URL, 8080, 100*time.Millisecond, true)
+	client, err := New(server.URL, 8080, 100*time.Millisecond, false)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestClient_Start(t *testing.T) {
 		t.Error("failed prefix for upload")
 	}
 
-	client.noDot = false
+	client.dot = false
 	err = client.Start(ctx)
 	if err != nil {
 		t.Errorf("failed to start client: %v", err)
@@ -152,7 +152,7 @@ func TestClient_Start(t *testing.T) {
 }
 
 func TestClient_String(t *testing.T) {
-	client, err := New("localhost", 8080, 100*time.Millisecond, false)
+	client, err := New("localhost", 8080, 100*time.Millisecond, true)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
