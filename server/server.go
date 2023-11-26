@@ -83,6 +83,9 @@ func (s *Server) createHandlers() *http.Server {
 
 // download writes data to client.
 func (s *Server) download(w http.ResponseWriter, r *http.Request) error {
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", "attachment; filename=download.log")
+
 	ctx, cancel := context.WithTimeout(r.Context(), s.timeout)
 	defer cancel()
 
