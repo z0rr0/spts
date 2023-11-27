@@ -3,11 +3,15 @@ package client
 import (
 	"bytes"
 	"context"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/z0rr0/spts/auth"
 )
 
 func TestClient_Download(t *testing.T) {
@@ -120,9 +124,6 @@ func TestClient_Start(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// address already has properly server URL
-	//ctx = context.WithValue(ctx, ctxClientKey, server.Client())
-
 	var b bytes.Buffer
 	ctx = context.WithValue(ctx, ctxWriterKey, &b)
 
@@ -165,5 +166,58 @@ func TestClient_String(t *testing.T) {
 	expected = "address: http://localhost:8080, timeout: 100ms"
 	if got := client.String(); got != expected {
 		t.Errorf("want %q, got %q", expected, got)
+	}
+}
+
+func TestClient_Token(t *testing.T) {
+	tokens := map[string]struct{}{"token1": {}, "token2": {}}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !auth.Authorize(tokens, r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		buffer := make([]byte, 2)
+		if _, err := r.Body.Read(buffer); err != nil && !errors.Is(err, io.EOF) {
+			t.Errorf("failed to read body data: %v", err)
+		}
+
+		if err := r.Body.Close(); err != nil {
+			t.Errorf("failed to close body: %v", err)
+		}
+
+		w.WriteHeader(http.StatusOK)
+		_, err := w.Write([]byte{0, 1})
+
+		if err != nil {
+			t.Errorf("Failed to write data: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	client, err := New(server.URL, 8080, 50*time.Millisecond, true)
+
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	client.address = server.URL
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	_, err = client.download(ctx, "token1", server.Client())
+	if err != nil {
+		t.Errorf("failed download: %v", err)
+	}
+
+	_, err = client.upload(ctx, "token1", server.Client())
+	if err != nil {
+		t.Errorf("failed upload: %v", err)
+	}
+
+	_, err = client.download(ctx, "token3", server.Client())
+	if err == nil {
+		t.Errorf("error expected")
 	}
 }

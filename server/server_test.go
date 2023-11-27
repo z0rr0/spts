@@ -7,10 +7,12 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/z0rr0/spts/auth"
 	"github.com/z0rr0/spts/common"
 )
 
@@ -61,7 +63,7 @@ func TestDownload(t *testing.T) {
 }
 
 func TestUpload(t *testing.T) {
-	s, err := New("localhost", 18081, 20*time.Millisecond)
+	s, err := New("localhost", 18082, 20*time.Millisecond)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -76,7 +78,7 @@ func TestUpload(t *testing.T) {
 }
 
 func TestServer_Start(t *testing.T) {
-	s, err := New("localhost", 18081, 20*time.Millisecond)
+	s, err := New("localhost", 18083, 20*time.Millisecond)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -153,5 +155,67 @@ func TestServer_Handle(t *testing.T) {
 	_, err = client.Do(req)
 	if err != nil {
 		t.Fatalf("failed to upload: %v", err)
+	}
+}
+
+func TestServer_Token(t *testing.T) {
+	err := os.Setenv(auth.ServerEnv, "token1,token2")
+	if err != nil {
+		t.Fatalf("failed to set environment variable: %v", err)
+	}
+
+	defer func() {
+		if e := os.Unsetenv(auth.ServerEnv); e != nil {
+			t.Errorf("failed to unset environment variable: %v", e)
+		}
+	}()
+
+	s, err := New("localhost", 18084, 10*time.Millisecond)
+	if err != nil {
+		t.Fatalf("failed to create server: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	client := &http.Client{}
+
+	go func() {
+		defer cancel()
+		time.Sleep(50 * time.Millisecond) // wait for server start
+
+		req, e := http.NewRequest("GET", "http://localhost:18084/download", nil)
+		if e != nil {
+			t.Errorf("failed to create download request: %v", e)
+			return
+		}
+
+		resp, e := client.Do(req)
+		if e != nil {
+			t.Errorf("failed to download: %v", e)
+			return
+		}
+
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Errorf("want %d, got %d", http.StatusUnauthorized, resp.StatusCode)
+		}
+
+		req, e = http.NewRequest("GET", "http://localhost:18084/download", nil)
+		if e != nil {
+			t.Errorf("failed to create download request: %v", e)
+			return
+		}
+
+		req.Header.Add(auth.AuthorizationHeader, auth.Prefix+"token1")
+		if resp, e = client.Do(req); e != nil {
+			t.Errorf("failed to download: %v", e)
+			return
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("want %d, got %d", http.StatusUnauthorized, resp.StatusCode)
+		}
+	}()
+
+	if err = s.Start(ctx); err != nil {
+		t.Errorf("failed to start: %v", err)
 	}
 }

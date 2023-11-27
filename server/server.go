@@ -68,22 +68,23 @@ func (s *Server) Start(ctx context.Context) error {
 }
 
 func (s *Server) createHandlers() *http.Server {
-	srv := &http.Server{
-		Addr:           s.address,
-		Handler:        http.DefaultServeMux,
-		ReadTimeout:    s.timeout * 2,
-		WriteTimeout:   s.timeout * 2,
-		MaxHeaderBytes: common.KB,
-	}
-
 	tokens := auth.LoadTokens()
+
 	handlers := map[string]handlerType{
 		common.UploadURL:   s.upload,
 		common.DownloadURL: s.download,
 	}
 
-	http.HandleFunc("/", rootHandler(tokens, handlers))
-	return srv
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", rootHandler(tokens, handlers))
+
+	return &http.Server{
+		Addr:           s.address,
+		Handler:        mux,
+		ReadTimeout:    s.timeout * 2,
+		WriteTimeout:   s.timeout * 2,
+		MaxHeaderBytes: common.KB,
+	}
 }
 
 // download writes data to client.

@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"fmt"
 	"maps"
 	"net/http/httptest"
 	"os"
@@ -55,24 +56,37 @@ func TestAuthorize(t *testing.T) {
 }
 
 func TestLoadTokens(t *testing.T) {
-	err := os.Setenv(serverEnv, "token1,token2")
-	if err != nil {
-		t.Fatalf("failed to set environment variable: %v", err)
+	testCases := []struct {
+		tokens   string
+		expected map[string]struct{}
+	}{
+		{tokens: "", expected: map[string]struct{}{}},
+		{tokens: "token1", expected: map[string]struct{}{"token1": {}}},
+		{tokens: "token1,token2", expected: map[string]struct{}{"token1": {}, "token2": {}}},
+		{tokens: " token1,,token2, ,", expected: map[string]struct{}{"token1": {}, "token2": {}}},
+		{tokens: ",,token2, ,", expected: map[string]struct{}{"token2": {}}},
+		{tokens: "token1,token2, ,token3 ", expected: map[string]struct{}{"token1": {}, "token2": {}, "token3": {}}},
 	}
 
-	defer func() {
-		if e := os.Unsetenv(serverEnv); e != nil {
-			t.Errorf("failed to unset environment variable: %v", e)
-		}
-	}()
+	for i := range testCases {
+		tc := testCases[i]
 
-	want := map[string]struct{}{
-		"token1": {},
-		"token2": {},
-	}
+		t.Run(fmt.Sprintf("case_%d", i), func(t *testing.T) {
+			err := os.Setenv(ServerEnv, tc.tokens)
+			if err != nil {
+				t.Fatalf("failed to set environment variable: %v", err)
+			}
 
-	if got := LoadTokens(); !maps.Equal(got, want) {
-		t.Errorf("LoadTokens() = %v, want %v", got, want)
+			defer func() {
+				if e := os.Unsetenv(ServerEnv); e != nil {
+					t.Errorf("failed to unset environment variable: %v", e)
+				}
+			}()
+
+			if got := LoadTokens(); !maps.Equal(got, tc.expected) {
+				t.Errorf("LoadTokens() = %v, want %v", got, tc.expected)
+			}
+		})
 	}
 }
 

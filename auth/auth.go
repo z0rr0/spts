@@ -13,11 +13,13 @@ const (
 	// Prefix is a prefix for authorization header.
 	Prefix = "Bearer "
 
+	// ServerEnv is an environment variable name for server's tokens.
+	ServerEnv = "SPTS_TOKENS"
 	clientEnv = "SPTS_KEY"
-	serverEnv = "SPTS_TOKENS"
 )
 
 // Authorize checks authorization header and returns true if it is valid.
+// It's very simple implementation without timing attacks protection.
 func Authorize(tokens map[string]struct{}, r *http.Request) bool {
 	if len(tokens) == 0 {
 		return true // no tokens, authorization is not required
@@ -43,8 +45,10 @@ func Authorize(tokens map[string]struct{}, r *http.Request) bool {
 func LoadTokens() map[string]struct{} {
 	tokens := make(map[string]struct{})
 
-	for _, token := range strings.Split(strings.TrimSpace(os.Getenv(serverEnv)), ",") {
-		tokens[token] = struct{}{}
+	for _, token := range strings.Split(strings.Trim(os.Getenv(ServerEnv), ", "), ",") {
+		if t := strings.TrimSpace(token); t != "" {
+			tokens[t] = struct{}{}
+		}
 	}
 
 	return tokens
