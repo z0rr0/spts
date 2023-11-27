@@ -92,6 +92,7 @@ func (s *Server) createHandlers() *http.Server {
 func (s *Server) download(w http.ResponseWriter, r *http.Request) error {
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", "attachment; filename=download.log")
+	w.WriteHeader(http.StatusOK)
 
 	ctx, cancel := context.WithTimeout(r.Context(), s.timeout)
 	defer cancel()
@@ -124,6 +125,7 @@ func (s *Server) download(w http.ResponseWriter, r *http.Request) error {
 
 // upload reads data from client.
 func (s *Server) upload(w http.ResponseWriter, r *http.Request) error {
+	w.WriteHeader(http.StatusOK)
 	ctx, cancel := context.WithTimeout(r.Context(), s.timeout)
 	defer cancel()
 
