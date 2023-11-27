@@ -15,10 +15,7 @@ import (
 	"github.com/z0rr0/spts/common"
 )
 
-const (
-	shutdownTimeout = 10 * time.Second
-	authPrefix      = "Bearer "
-)
+const shutdownTimeout = 10 * time.Second
 
 // ErrResponseFailed is returned when the response failed.
 var ErrResponseFailed = errors.New("response failed")

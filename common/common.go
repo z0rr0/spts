@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"strconv"
 	"time"
 )
@@ -56,6 +57,25 @@ func Address(host string, port uint64) (string, error) {
 	}
 
 	return net.JoinHostPort(host, strconv.FormatUint(port, 10)), nil
+}
+
+// URL returns a valid client's URL.
+func URL(host string, port uint64) (string, error) {
+	scheme := "http"
+
+	if port == 443 {
+		scheme = "https"
+	} else {
+		address, err := Address(host, port)
+		if err != nil {
+			return "", err
+		}
+
+		host = address
+	}
+
+	u := url.URL{Host: host, Scheme: scheme}
+	return u.String(), nil
 }
 
 // ByteSize returns generate size as a string.

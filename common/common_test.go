@@ -26,18 +26,18 @@ func TestAddress(t *testing.T) {
 			got, err := Address(tc.host, tc.port)
 			if tc.withError {
 				if err == nil {
-					t.Errorf("want error, got nil")
+					t.Errorf("expected error, got nil")
 				}
 				return
 			}
 
 			if err != nil {
-				t.Errorf("want nil, got %v", err)
+				t.Errorf("expected nil, got %v", err)
 				return
 			}
 
 			if got != tc.want {
-				t.Fatalf("want %s, got %s", tc.want, got)
+				t.Fatalf("expected %s, got %s", tc.want, got)
 			}
 		})
 	}
@@ -98,7 +98,45 @@ func TestSpeed(t *testing.T) {
 
 		t.Run(tc.name, func(t *testing.T) {
 			if got := Speed(tc.duration, tc.count, tc.unit); got != tc.want {
-				t.Errorf("want %s, got %s", tc.want, got)
+				t.Errorf("withError %s, got %s", tc.want, got)
+			}
+		})
+	}
+}
+
+func TestURL(t *testing.T) {
+	testCases := []struct {
+		name      string
+		host      string
+		port      uint64
+		want      string
+		withError bool
+	}{
+		{name: "valid", host: "localhost", port: 8080, want: "http://localhost:8080"},
+		{name: "zero", host: "localhost", port: 0, withError: true},
+		{name: "large_port", host: "localhost", port: 65536, withError: true},
+		{name: "secure", host: "fwtf.xzy", port: 443, want: "https://fwtf.xzy"},
+	}
+
+	for i := range testCases {
+		tc := testCases[i]
+
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := URL(tc.host, tc.port)
+			if tc.withError {
+				if err == nil {
+					t.Errorf("expected error, got nil")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("expected nil, got %v", err)
+				return
+			}
+
+			if got != tc.want {
+				t.Fatalf("expected %s, got %s", tc.want, got)
 			}
 		})
 	}

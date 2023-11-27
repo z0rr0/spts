@@ -17,10 +17,7 @@ import (
 
 type ctxType string
 
-const (
-	insecurePrefix         = "http://"
-	ctxWriterKey   ctxType = "writer"
-)
+const ctxWriterKey ctxType = "writer"
 
 // ErrRequestFailed is returned when the request failed.
 var ErrRequestFailed = errors.New("request failed")
@@ -36,13 +33,9 @@ type Client struct {
 
 // New creates a new client.
 func New(host string, port uint64, timeout time.Duration, dot bool) (*Client, error) {
-	address, err := common.Address(host, port)
+	address, err := common.URL(host, port)
 	if err != nil {
 		return nil, err
-	}
-
-	if !(strings.HasPrefix(address, insecurePrefix) || strings.HasPrefix(address, "https://")) {
-		address = insecurePrefix + address
 	}
 
 	return &Client{address: strings.TrimRight(address, "/ "), timeout: timeout, dot: dot}, nil
