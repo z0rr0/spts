@@ -25,10 +25,10 @@ func TestNew(t *testing.T) {
 		port      uint64
 		withError bool
 	}{
-		{name: "valid", host: "localhost", port: 18081},
+		{name: "valid", host: "localhost", port: 28081},
 		{name: "invalid_port", host: "localhost", withError: true},
 		{name: "failed_port", host: "localhost", port: 100_000, withError: true},
-		{name: "empty_host", port: 18081},
+		{name: "empty_host", port: 28081},
 	}
 
 	for i := range testCases {
@@ -49,7 +49,7 @@ func TestNew(t *testing.T) {
 }
 
 func TestDownload(t *testing.T) {
-	s, err := New("localhost", 18081, 20*time.Millisecond)
+	s, err := New("localhost", 28082, 20*time.Millisecond)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestDownload(t *testing.T) {
 }
 
 func TestUpload(t *testing.T) {
-	s, err := New("localhost", 18082, 20*time.Millisecond)
+	s, err := New("localhost", 28083, 20*time.Millisecond)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestUpload(t *testing.T) {
 }
 
 func TestServer_Start(t *testing.T) {
-	s, err := New("localhost", 18083, 20*time.Millisecond)
+	s, err := New("localhost", 28084, 20*time.Millisecond)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestServer_Token(t *testing.T) {
 		}
 	}()
 
-	s, err := New("localhost", 18084, 10*time.Millisecond)
+	s, err := New("localhost", 28085, 10*time.Millisecond)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -182,7 +182,7 @@ func TestServer_Token(t *testing.T) {
 		defer cancel()
 		time.Sleep(50 * time.Millisecond) // wait for server start
 
-		req, e := http.NewRequest("GET", "http://localhost:18084/download", nil)
+		req, e := http.NewRequest("GET", "http://localhost:28085/download", nil)
 		if e != nil {
 			t.Errorf("failed to create download request: %v", e)
 			return
@@ -198,7 +198,7 @@ func TestServer_Token(t *testing.T) {
 			t.Errorf("want %d, got %d", http.StatusUnauthorized, resp.StatusCode)
 		}
 
-		req, e = http.NewRequest("GET", "http://localhost:18084/download", nil)
+		req, e = http.NewRequest("GET", "http://localhost:28085/download", nil)
 		if e != nil {
 			t.Errorf("failed to create download request: %v", e)
 			return

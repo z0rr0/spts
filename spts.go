@@ -33,7 +33,7 @@ func main() {
 		debug      bool
 		version    bool
 		dot        bool
-		port       uint64 = 18081
+		port       uint64 = 28082
 		host              = "localhost"
 		timeout           = 3 * time.Second
 	)

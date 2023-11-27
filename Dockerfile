@@ -20,4 +20,5 @@ LABEL org.opencontainers.image.authors="me@axv.email" \
 COPY --from=builder /go/src/github.com/z0rr0/spts/spts /bin/
 RUN chmod 0755 /bin/spts
 
-ENTRYPOINT ["/bin/spts -server"]
+EXPOSE 28082
+ENTRYPOINT ["/bin/spts"]
