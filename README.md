@@ -45,6 +45,24 @@ Usage of ./spts:
         print version and exit
 ```
 
+### Authorization
+
+It's supported Bearer token authorization for server and client using environment variables:
+
+```sh
+# server with multiple tokens
+export SPTS_TOKENS="token1,token2"
+
+# client
+export SPTS_KEY="token1"
+```
+
+Example to generate random token:
+
+```sh
+head -c 32 /dev/urandom| base64
+```
+
 ### Docker
 
 Build image:
