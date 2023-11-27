@@ -11,10 +11,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/z0rr0/spts/auth"
 	"github.com/z0rr0/spts/common"
 )
 
-const shutdownTimeout = 10 * time.Second
+const (
+	shutdownTimeout = 10 * time.Second
+	authPrefix      = "Bearer "
+)
 
 // ErrResponseFailed is returned when the response failed.
 var ErrResponseFailed = errors.New("response failed")
@@ -72,12 +76,13 @@ func (s *Server) createHandlers() *http.Server {
 		MaxHeaderBytes: common.KB,
 	}
 
+	tokens := auth.LoadTokens()
 	handlers := map[string]handlerType{
 		common.UploadURL:   s.upload,
 		common.DownloadURL: s.download,
 	}
 
-	http.HandleFunc("/", rootHandler(handlers))
+	http.HandleFunc("/", rootHandler(tokens, handlers))
 	return srv
 }
 
@@ -142,7 +147,7 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func rootHandler(handlers map[string]handlerType) func(w http.ResponseWriter, r *http.Request) {
+func rootHandler(tokens map[string]struct{}, handlers map[string]handlerType) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var (
 			start = time.Now()
@@ -153,7 +158,7 @@ func rootHandler(handlers map[string]handlerType) func(w http.ResponseWriter, r 
 
 		defer func() {
 			if code != http.StatusOK {
-				http.Error(w, "ERROR", code)
+				http.Error(w, http.StatusText(code), code)
 			}
 
 			slog.Info(
@@ -161,6 +166,11 @@ func rootHandler(handlers map[string]handlerType) func(w http.ResponseWriter, r 
 				"method", r.Method, "code", code, "duration", time.Since(start), "remoteAddr", r.RemoteAddr,
 			)
 		}()
+
+		if !auth.Authorize(tokens, r) {
+			code = http.StatusUnauthorized
+			return
+		}
 
 		handler, ok := handlers[url]
 		if !ok {

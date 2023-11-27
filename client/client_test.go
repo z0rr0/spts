@@ -35,7 +35,7 @@ func TestClient_Download(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	count, err := client.download(ctx, server.Client())
+	count, err := client.download(ctx, "", server.Client())
 	if err != nil {
 		t.Errorf("failed download: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestClient_Upload(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	count, err := client.upload(ctx, server.Client())
+	count, err := client.upload(ctx, "", server.Client())
 	if err != nil {
 		t.Errorf("failed upload: %v", err)
 	}

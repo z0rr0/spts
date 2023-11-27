@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/z0rr0/spts/auth"
 	"github.com/z0rr0/spts/common"
 )
 
@@ -24,7 +25,7 @@ const (
 // ErrRequestFailed is returned when the request failed.
 var ErrRequestFailed = errors.New("request failed")
 
-type handlerType func(context.Context, *http.Client) (int64, error)
+type handlerType func(context.Context, string, *http.Client) (int64, error)
 
 // Client is a client data.
 type Client struct {
@@ -74,6 +75,7 @@ func (c *Client) Start(ctx context.Context) error {
 	var (
 		newLine = c.newLine()
 		writer  = c.writer(ctx)
+		token   = auth.Token()
 	)
 
 	tr := &http.Transport{
@@ -83,7 +85,7 @@ func (c *Client) Start(ctx context.Context) error {
 	}
 	client := &http.Client{Transport: tr}
 
-	speed, err := c.run(ctx, client, writer, c.download)
+	speed, err := c.run(ctx, client, writer, token, c.download)
 	if err != nil {
 		return err
 	}
@@ -93,7 +95,7 @@ func (c *Client) Start(ctx context.Context) error {
 		return err
 	}
 
-	speed, err = c.run(ctx, client, writer, c.upload)
+	speed, err = c.run(ctx, client, writer, token, c.upload)
 	if err != nil {
 		return err
 	}
@@ -103,14 +105,14 @@ func (c *Client) Start(ctx context.Context) error {
 }
 
 // Upload does a client POST request with body.
-func (c *Client) run(ctx context.Context, client *http.Client, w io.Writer, handler handlerType) (string, error) {
+func (c *Client) run(ctx context.Context, client *http.Client, w io.Writer, token string, handler handlerType) (string, error) {
 	if c.dot {
 		prg := newProgress(w, time.Second)
 		defer prg.done()
 	}
 
 	start := time.Now()
-	count, err := handler(ctx, client)
+	count, err := handler(ctx, token, client)
 	if err != nil {
 		return "", err
 	}
@@ -119,7 +121,7 @@ func (c *Client) run(ctx context.Context, client *http.Client, w io.Writer, hand
 }
 
 // download gets data from server.
-func (c *Client) download(ctx context.Context, client *http.Client) (int64, error) {
+func (c *Client) download(ctx context.Context, token string, client *http.Client) (int64, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
@@ -128,6 +130,10 @@ func (c *Client) download(ctx context.Context, client *http.Client) (int64, erro
 
 	if err != nil {
 		return 0, errors.Join(ErrRequestFailed, fmt.Errorf("create: %w", err))
+	}
+
+	if token != "" {
+		req.Header.Set(auth.AuthorizationHeader, auth.Prefix+token)
 	}
 
 	resp, err := client.Do(req)
@@ -149,7 +155,7 @@ func (c *Client) download(ctx context.Context, client *http.Client) (int64, erro
 }
 
 // upload sends data to server.
-func (c *Client) upload(ctx context.Context, client *http.Client) (int64, error) {
+func (c *Client) upload(ctx context.Context, token string, client *http.Client) (int64, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
@@ -159,6 +165,10 @@ func (c *Client) upload(ctx context.Context, client *http.Client) (int64, error)
 
 	if err != nil {
 		return 0, errors.Join(ErrRequestFailed, fmt.Errorf("create: %w", err))
+	}
+
+	if token != "" {
+		req.Header.Set(auth.AuthorizationHeader, auth.Prefix+token)
 	}
 
 	resp, err := client.Do(req)

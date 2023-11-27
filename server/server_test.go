@@ -128,7 +128,7 @@ func TestServer_Handle(t *testing.T) {
 		},
 	}
 
-	server := httptest.NewServer(http.HandlerFunc(rootHandler(handlers)))
+	server := httptest.NewServer(http.HandlerFunc(rootHandler(nil, handlers)))
 	defer server.Close()
 	client := server.Client()
 
