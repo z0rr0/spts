@@ -69,6 +69,7 @@ func (s *Server) Start(ctx context.Context) error {
 
 func (s *Server) createHandlers() *http.Server {
 	tokens := auth.LoadTokens()
+	slog.Debug("tokens", "count", len(tokens))
 
 	handlers := map[string]handlerType{
 		common.UploadURL:   s.upload,

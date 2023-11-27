@@ -77,6 +77,7 @@ func (c *Client) Start(ctx context.Context) error {
 		writer  = c.writer(ctx)
 		token   = auth.Token()
 	)
+	slog.Debug("token", "length", len(token))
 
 	tr := &http.Transport{
 		Proxy:           http.ProxyFromEnvironment,
