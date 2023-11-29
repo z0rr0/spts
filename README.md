@@ -45,6 +45,16 @@ Usage of ./spts:
         print version and exit
 ```
 
+Run client:
+
+```sh
+./spts -host 192.168.1.76
+
+IP address:     192.168.1.88
+Download speed: 48.51 MBits/s
+Upload speed:   78.13 MBits/s
+```
+
 ### Authorization
 
 It's supported Bearer token authorization for server and client using environment variables:
@@ -76,6 +86,10 @@ Use prepared:
 ```sh
 # server
 docker run --rm --name spts -p 28082:28082 z0rr0/spts:latest -debug -host 0.0.0.0 -server
+# or as a daemon with authorization (file $PWD/env), memory and logs limitations
+docker run -d --name spts -m 32m -p 28082:28082 --env-file=$PWD/env \
+  --log-opt max-size=10m --restart unless-stopped \
+  z0rr0/spts:latest -debug -host 0.0.0.0 -server
 
 # client
 docker run --rm --name spts_client z0rr0/spts:latest -host $SERVER
