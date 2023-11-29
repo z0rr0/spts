@@ -12,14 +12,18 @@ import (
 	"time"
 
 	"github.com/z0rr0/spts/auth"
+	"github.com/z0rr0/spts/common"
 )
 
 func TestClient_Download(t *testing.T) {
+	const clientIP = "123.124.125.126"
 	var data = []byte("test data")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/download") {
+			w.Header().Set(common.XRequestIPHeader, clientIP)
 			w.WriteHeader(http.StatusOK)
+
 			_, err := w.Write(data)
 
 			if err != nil {
@@ -29,19 +33,24 @@ func TestClient_Download(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := New(server.URL, 8080, 50*time.Millisecond, true)
+	params := &common.Params{Host: server.URL, Port: 8080, Timeout: 50 * time.Millisecond, Dot: true}
+	client, err := New(params)
 
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
 
-	client.address = server.URL
+	client.Address = server.URL
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	count, err := client.download(ctx, "", server.Client())
+	count, ip, err := client.download(ctx, "", server.Client())
 	if err != nil {
 		t.Errorf("failed download: %v", err)
+	}
+
+	if ip != clientIP {
+		t.Errorf("want %s, got %s IP address", clientIP, ip)
 	}
 
 	if want := int64(len(data)); count != want {
@@ -50,8 +59,13 @@ func TestClient_Download(t *testing.T) {
 }
 
 func TestClient_Upload(t *testing.T) {
+	const clientIP = "123.124.125.126"
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/upload") {
+			w.Header().Set(common.XRequestIPHeader, clientIP)
+			w.WriteHeader(http.StatusOK)
+
 			buffer := make([]byte, 32)
 
 			n, err := r.Body.Read(buffer)
@@ -66,24 +80,27 @@ func TestClient_Upload(t *testing.T) {
 			if err = r.Body.Close(); err != nil {
 				t.Errorf("failed to close body: %v", err)
 			}
-
-			w.WriteHeader(http.StatusOK)
 		}
 	}))
 	defer server.Close()
 
-	client, err := New(server.URL, 8080, 100*time.Millisecond, true)
+	params := &common.Params{Host: server.URL, Port: 8080, Timeout: 100 * time.Millisecond, Dot: true}
+	client, err := New(params)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
 
-	client.address = server.URL
+	client.Address = server.URL
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	count, err := client.upload(ctx, "", server.Client())
+	count, ip, err := client.upload(ctx, "", server.Client())
 	if err != nil {
 		t.Errorf("failed upload: %v", err)
+	}
+
+	if ip != clientIP {
+		t.Errorf("want %s, got %s IP address", clientIP, ip)
 	}
 
 	if count == 0 {
@@ -115,12 +132,13 @@ func TestClient_Start(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := New(server.URL, 8080, 100*time.Millisecond, false)
+	params := &common.Params{Host: server.URL, Port: 8080, Timeout: 100 * time.Millisecond}
+	client, err := New(params)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
 
-	client.address = server.URL
+	client.Address = server.URL
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -133,19 +151,24 @@ func TestClient_Start(t *testing.T) {
 	}
 
 	lines := strings.Split(b.String(), "\n")
-	if n := len(lines); n != 3 {
-		t.Errorf("want 3 lines, got %d", n)
+	if n := len(lines); n != 4 {
+		// IP, download, upload, empty line
+		t.Errorf("want 3 lines, got %d: %q", n, lines)
 	}
 
-	if !strings.HasPrefix(lines[0], "Download speed:") {
+	if !strings.HasPrefix(lines[0], "IP address:") {
+		t.Error("failed prefix for IP address")
+	}
+
+	if !strings.HasPrefix(lines[1], "Download speed:") {
 		t.Error("failed prefix for download")
 	}
 
-	if !strings.HasPrefix(lines[1], "Upload speed:") {
+	if !strings.HasPrefix(lines[2], "Upload speed:") {
 		t.Error("failed prefix for upload")
 	}
 
-	client.dot = false
+	client.Dot = false
 	err = client.Start(ctx)
 	if err != nil {
 		t.Errorf("failed to start client: %v", err)
@@ -153,13 +176,15 @@ func TestClient_Start(t *testing.T) {
 }
 
 func TestClient_String(t *testing.T) {
-	client, err := New("localhost", 8080, 100*time.Millisecond, true)
+	params := &common.Params{Host: "localhost", Port: 8080, Timeout: 100 * time.Millisecond, Dot: true}
+	client, err := New(params)
+
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
 
 	expected := "\n"
-	if got := client.newLine(); got != expected {
+	if got := client.NewLine(); got != expected {
 		t.Errorf("want %s, got %s", expected, got)
 	}
 
@@ -196,27 +221,28 @@ func TestClient_Token(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := New(server.URL, 8080, 50*time.Millisecond, true)
+	params := &common.Params{Host: server.URL, Port: 8080, Timeout: 50 * time.Millisecond, Dot: true}
+	client, err := New(params)
 
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
 
-	client.address = server.URL
+	client.Address = server.URL
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	_, err = client.download(ctx, "token1", server.Client())
+	_, _, err = client.download(ctx, "token1", server.Client())
 	if err != nil {
 		t.Errorf("failed download: %v", err)
 	}
 
-	_, err = client.upload(ctx, "token1", server.Client())
+	_, _, err = client.upload(ctx, "token1", server.Client())
 	if err != nil {
 		t.Errorf("failed upload: %v", err)
 	}
 
-	_, err = client.download(ctx, "token3", server.Client())
+	_, _, err = client.download(ctx, "token3", server.Client())
 	if err == nil {
 		t.Errorf("error expected")
 	}

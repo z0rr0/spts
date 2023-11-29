@@ -82,15 +82,15 @@ func TestSpeed(t *testing.T) {
 		unit     SpeedUnit
 		want     string
 	}{
-		{name: "zero_with_seconds", duration: 0, count: 0, unit: SpeedSeconds, want: "0.00 B/s"},
-		{name: "zero_with_milliseconds", duration: 0, count: 0, unit: SpeedMilliseconds, want: "0.00 B/ms"},
-		{name: "zero_with_microseconds", duration: 0, count: 0, unit: SpeedMicroseconds, want: "0.00 B/μs"},
-		{name: "microseconds", duration: 5000 * time.Microsecond, count: 50, unit: SpeedMicroseconds, want: "0.01 B/μs"},
-		{name: "milliseconds", duration: delay, count: 57, unit: SpeedMilliseconds, want: "5.70 B/ms"},
-		{name: "seconds", duration: time.Second, count: 21, unit: SpeedSeconds, want: "21.00 B/s"},
-		{name: "kilobytes", duration: delay, count: 105 * KB, unit: SpeedMilliseconds, want: "10.50 KB/ms"},
-		{name: "megabytes", duration: delay, count: 106 * MB, unit: SpeedMilliseconds, want: "10.60 MB/ms"},
-		{name: "gigabytes", duration: delay, count: 107 * GB, unit: SpeedMilliseconds, want: "10.70 GB/ms"},
+		{name: "zero_with_seconds", duration: 0, count: 0, unit: SpeedSeconds, want: "0.00 Bits/s"},
+		{name: "zero_with_milliseconds", duration: 0, count: 0, unit: SpeedMilliseconds, want: "0.00 Bits/ms"},
+		{name: "zero_with_microseconds", duration: 0, count: 0, unit: SpeedMicroseconds, want: "0.00 Bits/μs"},
+		{name: "microseconds", duration: 5000 * time.Microsecond, count: 50, unit: SpeedMicroseconds, want: "0.08 Bits/μs"},
+		{name: "milliseconds", duration: delay, count: 57, unit: SpeedMilliseconds, want: "45.60 Bits/ms"},
+		{name: "seconds", duration: time.Second, count: 21, unit: SpeedSeconds, want: "168.00 Bits/s"},
+		{name: "kilobytes", duration: delay, count: 105 * KB, unit: SpeedMilliseconds, want: "84.00 KBits/ms"},
+		{name: "megabytes", duration: delay, count: 106 * MB, unit: SpeedMilliseconds, want: "84.80 MBits/ms"},
+		{name: "gigabytes", duration: delay, count: 107 * GB, unit: SpeedMilliseconds, want: "85.60 GBits/ms"},
 	}
 
 	for i := range testCases {

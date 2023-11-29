@@ -35,7 +35,8 @@ func TestNew(t *testing.T) {
 		tc := testCases[i]
 
 		t.Run(tc.name, func(t *testing.T) {
-			s, err := New(tc.host, tc.port, timeout)
+			params := &common.Params{Host: tc.host, Port: tc.port, Timeout: timeout}
+			s, err := New(params)
 
 			if (err != nil) != tc.withError {
 				t.Errorf("want error %v, got %v", tc.withError, err)
@@ -49,7 +50,9 @@ func TestNew(t *testing.T) {
 }
 
 func TestDownload(t *testing.T) {
-	s, err := New("localhost", 28082, 20*time.Millisecond)
+	params := &common.Params{Host: "localhost", Port: 28082, Timeout: 20 * time.Millisecond}
+	s, err := New(params)
+
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -63,7 +66,9 @@ func TestDownload(t *testing.T) {
 }
 
 func TestUpload(t *testing.T) {
-	s, err := New("localhost", 28083, 20*time.Millisecond)
+	params := &common.Params{Host: "localhost", Port: 28083, Timeout: 20 * time.Millisecond}
+	s, err := New(params)
+
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -78,7 +83,9 @@ func TestUpload(t *testing.T) {
 }
 
 func TestServer_Start(t *testing.T) {
-	s, err := New("localhost", 28084, 20*time.Millisecond)
+	params := &common.Params{Host: "localhost", Port: 28084, Timeout: 20 * time.Millisecond}
+	s, err := New(params)
+
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -170,7 +177,9 @@ func TestServer_Token(t *testing.T) {
 		}
 	}()
 
-	s, err := New("localhost", 28085, 10*time.Millisecond)
+	params := &common.Params{Host: "localhost", Port: 28085, Timeout: 10 * time.Millisecond}
+	s, err := New(params)
+
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}

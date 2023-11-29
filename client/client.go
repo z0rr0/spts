@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/z0rr0/spts/auth"
@@ -22,28 +21,26 @@ const ctxWriterKey ctxType = "writer"
 // ErrRequestFailed is returned when the request failed.
 var ErrRequestFailed = errors.New("request failed")
 
-type handlerType func(context.Context, string, *http.Client) (int64, error)
+type handlerType func(context.Context, string, *http.Client) (int64, string, error)
 
 // Client is a client data.
 type Client struct {
-	address string
-	timeout time.Duration
-	dot     bool
+	common.ServiceBase
 }
 
 // New creates a new client.
-func New(host string, port uint64, timeout time.Duration, dot bool) (*Client, error) {
-	address, err := common.URL(host, port)
+func New(params *common.Params) (*Client, error) {
+	address, err := common.URL(params.Host, params.Port)
 	if err != nil {
 		return nil, err
 	}
 
-	return &Client{address: strings.TrimRight(address, "/ "), timeout: timeout, dot: dot}, nil
+	return &Client{ServiceBase: common.ServiceBase{Address: address, Params: params}}, nil
 }
 
 // String implements Stringer interface.
 func (c *Client) String() string {
-	return fmt.Sprintf("address: %s, timeout: %s", c.address, c.timeout)
+	return fmt.Sprintf("address: %s, timeout: %s", c.Address, c.Timeout)
 }
 
 func (c *Client) writer(ctx context.Context) io.Writer {
@@ -56,17 +53,10 @@ func (c *Client) writer(ctx context.Context) io.Writer {
 	return writer
 }
 
-func (c *Client) newLine() string {
-	if c.dot {
-		return "\n"
-	}
-	return ""
-}
-
 // Start does a client request.
 func (c *Client) Start(ctx context.Context) error {
 	var (
-		newLine = c.newLine()
+		newLine = c.NewLine()
 		writer  = c.writer(ctx)
 		token   = auth.Token()
 	)
@@ -79,7 +69,12 @@ func (c *Client) Start(ctx context.Context) error {
 	}
 	client := &http.Client{Transport: tr}
 
-	speed, err := c.run(ctx, client, writer, token, c.download)
+	speed, ip, err := c.run(ctx, client, writer, token, c.download)
+	if err != nil {
+		return err
+	}
+
+	_, err = fmt.Fprintf(writer, "%sIP address:     %s\n", newLine, ip)
 	if err != nil {
 		return err
 	}
@@ -89,7 +84,7 @@ func (c *Client) Start(ctx context.Context) error {
 		return err
 	}
 
-	speed, err = c.run(ctx, client, writer, token, c.upload)
+	speed, _, err = c.run(ctx, client, writer, token, c.upload)
 	if err != nil {
 		return err
 	}
@@ -99,31 +94,32 @@ func (c *Client) Start(ctx context.Context) error {
 }
 
 // Upload does a client POST request with body.
-func (c *Client) run(ctx context.Context, client *http.Client, w io.Writer, token string, handler handlerType) (string, error) {
-	if c.dot {
+func (c *Client) run(ctx context.Context, client *http.Client, w io.Writer, token string, handler handlerType) (string, string, error) {
+	if c.Params.Dot {
 		prg := newProgress(w, time.Second)
 		defer prg.done()
 	}
 
 	start := time.Now()
-	count, err := handler(ctx, token, client)
+	count, ip, err := handler(ctx, token, client)
+
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
-	return common.Speed(time.Since(start), count, common.SpeedSeconds), nil
+	return common.Speed(time.Since(start), count, common.SpeedSeconds), ip, nil
 }
 
 // download gets data from server.
-func (c *Client) download(ctx context.Context, token string, client *http.Client) (int64, error) {
-	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+func (c *Client) download(ctx context.Context, token string, client *http.Client) (int64, string, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
 	defer cancel()
 
-	requestURL := c.address + common.DownloadURL
+	requestURL := c.Address + common.DownloadURL
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 
 	if err != nil {
-		return 0, errors.Join(ErrRequestFailed, fmt.Errorf("create: %w", err))
+		return 0, "", errors.Join(ErrRequestFailed, fmt.Errorf("create: %w", err))
 	}
 
 	if token != "" {
@@ -132,33 +128,34 @@ func (c *Client) download(ctx context.Context, token string, client *http.Client
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return 0, errors.Join(ErrRequestFailed, fmt.Errorf("do: %w", err))
+		return 0, "", errors.Join(ErrRequestFailed, fmt.Errorf("do: %w", err))
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return 0, errors.Join(ErrRequestFailed, fmt.Errorf("status: %d", resp.StatusCode))
+		return 0, "", errors.Join(ErrRequestFailed, fmt.Errorf("status: %d", resp.StatusCode))
 	}
 
+	ip := resp.Header.Get(common.XRequestIPHeader)
 	count, err := common.Read(ctx, resp.Body, common.DefaultBufSize)
 	if err != nil {
-		return 0, errors.Join(ErrRequestFailed, fmt.Errorf("read: %w", err))
+		return 0, "", errors.Join(ErrRequestFailed, fmt.Errorf("read: %w", err))
 	}
 
-	slog.Debug("reads", "count", common.ByteSize(count))
-	return int64(count), resp.Body.Close()
+	slog.Debug("reads", "ip", ip, "count", common.ByteSize(count))
+	return int64(count), ip, resp.Body.Close()
 }
 
 // upload sends data to server.
-func (c *Client) upload(ctx context.Context, token string, client *http.Client) (int64, error) {
-	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+func (c *Client) upload(ctx context.Context, token string, client *http.Client) (int64, string, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
 	defer cancel()
 
 	body := common.NewReader(ctx)
-	requestURL := c.address + common.UploadURL
+	requestURL := c.Address + common.UploadURL
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, body)
 
 	if err != nil {
-		return 0, errors.Join(ErrRequestFailed, fmt.Errorf("create: %w", err))
+		return 0, "", errors.Join(ErrRequestFailed, fmt.Errorf("create: %w", err))
 	}
 
 	if token != "" {
@@ -167,19 +164,20 @@ func (c *Client) upload(ctx context.Context, token string, client *http.Client) 
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return 0, errors.Join(ErrRequestFailed, fmt.Errorf("do: %w", err))
+		return 0, "", errors.Join(ErrRequestFailed, fmt.Errorf("do: %w", err))
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return 0, errors.Join(ErrRequestFailed, fmt.Errorf("status: %d", resp.StatusCode))
+		return 0, "", errors.Join(ErrRequestFailed, fmt.Errorf("status: %d", resp.StatusCode))
 	}
 
 	if err = resp.Body.Close(); err != nil {
-		return 0, errors.Join(ErrRequestFailed, fmt.Errorf("close body: %w", err))
+		return 0, "", errors.Join(ErrRequestFailed, fmt.Errorf("close body: %w", err))
 	}
 
 	count := body.Count.Load()
-	slog.Debug("writes", "count", common.ByteSize(int(count)))
+	ip := resp.Header.Get(common.XRequestIPHeader)
+	slog.Debug("writes", "ip", ip, "count", common.ByteSize(int(count)))
 
-	return count, nil
+	return count, ip, nil
 }

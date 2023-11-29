@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -38,6 +39,9 @@ const (
 
 	// DefaultBufSize is a default buffer size for generate transfer.
 	DefaultBufSize = 32 * KB
+
+	// XRequestIPHeader is a header name for client's IP address.
+	XRequestIPHeader = "X-Request-IP"
 )
 
 var (
@@ -48,6 +52,28 @@ var (
 // Mode is a program mode.
 type Mode interface {
 	Start(ctx context.Context) error
+}
+
+// Params is a program parameters.
+type Params struct {
+	Host    string
+	Port    uint64
+	Timeout time.Duration
+	Dot     bool
+}
+
+// NewLine returns a new line string by dot flag.
+func (p *Params) NewLine() string {
+	if p.Dot {
+		return "\n"
+	}
+	return ""
+}
+
+// ServiceBase is a base client/server struct.
+type ServiceBase struct {
+	Address string
+	*Params
 }
 
 // Address returns a valid address.
@@ -75,7 +101,7 @@ func URL(host string, port uint64) (string, error) {
 	}
 
 	u := url.URL{Host: host, Scheme: scheme}
-	return u.String(), nil
+	return strings.TrimRight(u.String(), "/ "), nil
 }
 
 // ByteSize returns generate size as a string.
@@ -93,7 +119,7 @@ func ByteSize(size int) string {
 }
 
 // Speed returns network speed as a string and
-func Speed(duration time.Duration, count int64, unit SpeedUnit) string {
+func Speed(duration time.Duration, biyteScount int64, unit SpeedUnit) string {
 	var (
 		speed float64
 		name  = "s"
@@ -111,17 +137,18 @@ func Speed(duration time.Duration, count int64, unit SpeedUnit) string {
 	}
 
 	if speed > 0 {
-		speed = float64(count) / speed
+		bitsCount := biyteScount * 8
+		speed = float64(bitsCount) / speed
 	}
 
 	switch {
 	case speed < KB:
-		return fmt.Sprintf("%.2f B/%s", speed, name)
+		return fmt.Sprintf("%.2f Bits/%s", speed, name)
 	case speed < MB:
-		return fmt.Sprintf("%.2f KB/%s", speed/KB, name)
+		return fmt.Sprintf("%.2f KBits/%s", speed/KB, name)
 	case speed < GB:
-		return fmt.Sprintf("%.2f MB/%s", speed/MB, name)
+		return fmt.Sprintf("%.2f MBits/%s", speed/MB, name)
 	default:
-		return fmt.Sprintf("%.2f GB/%s", speed/GB, name)
+		return fmt.Sprintf("%.2f GBits/%s", speed/GB, name)
 	}
 }

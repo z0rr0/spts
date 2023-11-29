@@ -75,7 +75,8 @@ func main() {
 		cancel()
 	}()
 
-	if err := start(ctx, serverMode, host, port, timeout, dot); err != nil {
+	params := &common.Params{Host: host, Port: port, Timeout: timeout, Dot: dot}
+	if err := start(ctx, serverMode, params); err != nil {
 		slog.Error("processing", "error", err)
 		os.Exit(1)
 	}
@@ -90,20 +91,22 @@ func initLogger(debug bool) {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level})))
 }
 
-func start(ctx context.Context, serverMode bool, host string, port uint64, timeout time.Duration, dot bool) error {
+func start(ctx context.Context, serverMode bool, params *common.Params) error {
 	var (
 		err error
 		m   common.Mode
 	)
 
 	if serverMode {
-		m, err = server.New(host, port, timeout)
+		m, err = server.New(params)
 		if err != nil {
 			slog.Error("server.New", "error", err)
 			return err
 		}
 	} else {
-		m, err = client.New(host, port, timeout*2, dot)
+		params.Timeout *= 2
+
+		m, err = client.New(params)
 		if err != nil {
 			slog.Error("client.New", "error", err)
 			return err

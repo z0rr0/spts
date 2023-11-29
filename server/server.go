@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -24,18 +25,17 @@ type handlerType func(w http.ResponseWriter, r *http.Request) error
 
 // Server is a server data.
 type Server struct {
-	address string
-	timeout time.Duration
+	common.ServiceBase
 }
 
 // New creates a new server.
-func New(host string, port uint64, timeout time.Duration) (*Server, error) {
-	address, err := common.Address(host, port)
+func New(params *common.Params) (*Server, error) {
+	address, err := common.Address(params.Host, params.Port)
 	if err != nil {
 		return nil, err
 	}
 
-	return &Server{address: address, timeout: timeout}, nil
+	return &Server{ServiceBase: common.ServiceBase{Address: address, Params: params}}, nil
 }
 
 // Start starts the server.
@@ -54,7 +54,7 @@ func (s *Server) Start(ctx context.Context) error {
 		close(connectionsClosed)
 	}()
 
-	slog.Info("HTTP server starting", "PID", os.Getpid(), "address", s.address, "timeout", s.timeout)
+	slog.Info("HTTP server starting", "PID", os.Getpid(), "address", s.Address, "timeout", s.Timeout)
 	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		slog.Error("HTTP server ListenAndServe error", "error", err)
 	}
@@ -76,22 +76,32 @@ func (s *Server) createHandlers() *http.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", rootHandler(tokens, handlers))
 
+	timeout := s.Timeout * 2
 	return &http.Server{
-		Addr:           s.address,
+		Addr:           s.Address,
 		Handler:        mux,
-		ReadTimeout:    s.timeout * 2,
-		WriteTimeout:   s.timeout * 2,
+		ReadTimeout:    timeout,
+		WriteTimeout:   timeout,
 		MaxHeaderBytes: common.KB,
 	}
 }
 
 // download writes data to client.
+// It returns client's IP address.
 func (s *Server) download(w http.ResponseWriter, r *http.Request) error {
+	var n int
+	ip, err := remoteIP(r)
+
+	if err != nil {
+		return errors.Join(ErrResponseFailed, fmt.Errorf("remoteIP: %w", err))
+	}
+
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", "attachment; filename=download.log")
+	w.Header().Set(common.XRequestIPHeader, ip)
 	w.WriteHeader(http.StatusOK)
 
-	ctx, cancel := context.WithTimeout(r.Context(), s.timeout)
+	ctx, cancel := context.WithTimeout(r.Context(), s.Timeout)
 	defer cancel()
 
 	reader := common.NewReader(ctx)
@@ -102,7 +112,7 @@ func (s *Server) download(w http.ResponseWriter, r *http.Request) error {
 	}()
 
 	for {
-		n, err := reader.Read(buffer)
+		n, err = reader.Read(buffer)
 
 		if err != nil {
 			if errors.Is(err, io.EOF) {
@@ -121,9 +131,17 @@ func (s *Server) download(w http.ResponseWriter, r *http.Request) error {
 }
 
 // upload reads data from client.
+// It returns client's IP address.
 func (s *Server) upload(w http.ResponseWriter, r *http.Request) error {
+	ip, err := remoteIP(r)
+	if err != nil {
+		return errors.Join(ErrResponseFailed, fmt.Errorf("remoteIP: %w", err))
+	}
+
+	w.Header().Set(common.XRequestIPHeader, ip)
 	w.WriteHeader(http.StatusOK)
-	ctx, cancel := context.WithTimeout(r.Context(), s.timeout)
+
+	ctx, cancel := context.WithTimeout(r.Context(), s.Timeout)
 	defer cancel()
 
 	count, err := common.Read(ctx, r.Body, common.DefaultBufSize)
@@ -179,8 +197,7 @@ func rootHandler(tokens map[string]struct{}, handlers map[string]handlerType) fu
 			return
 		}
 
-		err := handler(w, r)
-		if err != nil {
+		if err := handler(w, r); err != nil {
 			slog.Error("request", "error", err)
 			if strings.Contains(err.Error(), "http: request body too large") {
 				code = http.StatusRequestEntityTooLarge
@@ -190,4 +207,14 @@ func rootHandler(tokens map[string]struct{}, handlers map[string]handlerType) fu
 			return
 		}
 	}
+}
+
+func remoteIP(r *http.Request) (string, error) {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+
+	if err != nil {
+		return "", err
+	}
+
+	return host, nil
 }
