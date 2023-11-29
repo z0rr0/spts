@@ -19,6 +19,8 @@ curl -X POST --data-binary @data.log -w "speed upload: %{speed_upload}\n" \
   http://localhost:28082/upload
 ```
 
+**IMPORTANT NOTE**: It doesn't work correctly with reverse proxies (like nginx) due to payload buffering.
+
 ## Build and test
 
 ```sh
@@ -28,24 +30,24 @@ make all
 ## Usage
 
 ```
-Usage of ./spts:
+Usage of spts:
   -debug
-        enable debug mode
+    	enable debug mode
+  -dot
+    	show dot output (for client mode)
   -host string
-        host (listen on for server, connect to for client) (default "localhost")
-  -nodot
-        disable dot output (for client mode)
+    	host (listen on for server, connect to for client) (default "localhost")
   -port uint
-        port to listen on (default 28082)
+    	port to listen on (default 28082)
   -server
-        run in server mode
+    	run in server mode
   -timeout duration
-        timeout for requests (double value for client) (default 3s)
+    	timeout for requests (double value for client) (default 3s)
   -version
-        print version and exit
+    	print version and exit
 ```
 
-Run client:
+Client run example:
 
 ```sh
 ./spts -host 192.168.1.76
@@ -94,3 +96,8 @@ docker run -d --name spts -m 32m -p 28082:28082 --env-file=$PWD/env \
 # client
 docker run --rm --name spts_client z0rr0/spts:latest -host $SERVER
 ```
+
+## License
+
+This source code is governed by a [MIT](https://opensource.org/license/mit/)
+license that can be found in the [LICENSE](https://github.com/z0rr0/spts/blob/master/LICENSE) file.
