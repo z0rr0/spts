@@ -31,20 +31,22 @@ make all
 
 ```
 Usage of spts:
+  -clients int
+        max clients (for server mode) (default 1)
   -debug
-    	enable debug mode
+        enable debug mode
   -dot
-    	show dot output (for client mode)
+        show dot progress output (for client mode)
   -host string
-    	host (listen on for server, connect to for client) (default "localhost")
+        host (listen on for server, connect to for client) (default "localhost")
   -port uint
-    	port to listen on (default 28082)
+        port to listen on (in range 1..65535) (default 28082)
   -server
-    	run in server mode
+        run in server mode
   -timeout duration
-    	timeout for requests (double value for client) (default 3s)
+        timeout for requests (double value for client) (default 3s)
   -version
-    	print version and exit
+        print version and exit
 ```
 
 Client run example:
