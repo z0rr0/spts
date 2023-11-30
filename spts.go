@@ -67,7 +67,7 @@ func main() {
 	slog.Debug(
 		"starting",
 		"version", Version, "revision", Revision, "go", GoVersion, "buildDate", BuildDate,
-		"serverMode", serverMode, "host", host, "port", port, "timeout", timeout,
+		"serverMode", serverMode, "host", host, "port", port, "clients", clients, "timeout", timeout,
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
