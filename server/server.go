@@ -35,12 +35,19 @@ func New(params *common.Params) (*Server, error) {
 		return nil, err
 	}
 
+	if params.Clients < 1 {
+		return nil, errors.New("allow clients number must be greater than 0")
+	}
+
 	return &Server{ServiceBase: common.ServiceBase{Address: address, Params: params}}, nil
 }
 
 // Start starts the server.
 func (s *Server) Start(ctx context.Context) error {
-	srv := s.createHandlers()
+	semaphore := make(chan struct{}, s.Clients) // limit concurrent requests
+	defer close(semaphore)
+
+	srv := s.createHandlers(semaphore)
 	connectionsClosed := make(chan struct{})
 
 	go func() {
@@ -64,7 +71,7 @@ func (s *Server) Start(ctx context.Context) error {
 	return nil
 }
 
-func (s *Server) createHandlers() *http.Server {
+func (s *Server) createHandlers(semaphore chan struct{}) *http.Server {
 	tokens := auth.LoadTokens()
 	slog.Debug("tokens", "count", len(tokens))
 
@@ -72,9 +79,8 @@ func (s *Server) createHandlers() *http.Server {
 		common.UploadURL:   s.upload,
 		common.DownloadURL: s.download,
 	}
-
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", rootHandler(tokens, handlers))
+	mux.HandleFunc("/", rootHandler(semaphore, tokens, handlers))
 
 	timeout := s.Timeout * 2
 	return &http.Server{
@@ -166,8 +172,9 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func rootHandler(tokens map[string]struct{}, handlers map[string]handlerType) func(w http.ResponseWriter, r *http.Request) {
+func rootHandler(semaphore chan struct{}, tokens map[string]struct{}, handlers map[string]handlerType) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
+		semaphore <- struct{}{}
 		var (
 			start = time.Now()
 			code  = http.StatusOK
@@ -179,11 +186,11 @@ func rootHandler(tokens map[string]struct{}, handlers map[string]handlerType) fu
 			if code != http.StatusOK {
 				http.Error(w, http.StatusText(code), code)
 			}
-
 			slog.Info(
 				"request done",
 				"method", r.Method, "code", code, "duration", time.Since(start), "remoteAddr", r.RemoteAddr,
 			)
+			<-semaphore // release semaphore for next request
 		}()
 
 		if !auth.Authorize(tokens, r) {

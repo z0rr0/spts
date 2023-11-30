@@ -35,7 +35,7 @@ func TestNew(t *testing.T) {
 		tc := testCases[i]
 
 		t.Run(tc.name, func(t *testing.T) {
-			params := &common.Params{Host: tc.host, Port: tc.port, Timeout: timeout}
+			params := &common.Params{Host: tc.host, Port: tc.port, Timeout: timeout, Clients: 1}
 			s, err := New(params)
 
 			if (err != nil) != tc.withError {
@@ -50,7 +50,7 @@ func TestNew(t *testing.T) {
 }
 
 func TestDownload(t *testing.T) {
-	params := &common.Params{Host: "localhost", Port: 28082, Timeout: 20 * time.Millisecond}
+	params := &common.Params{Host: "localhost", Port: 28082, Timeout: 20 * time.Millisecond, Clients: 1}
 	s, err := New(params)
 
 	if err != nil {
@@ -66,7 +66,7 @@ func TestDownload(t *testing.T) {
 }
 
 func TestUpload(t *testing.T) {
-	params := &common.Params{Host: "localhost", Port: 28083, Timeout: 20 * time.Millisecond}
+	params := &common.Params{Host: "localhost", Port: 28083, Timeout: 20 * time.Millisecond, Clients: 1}
 	s, err := New(params)
 
 	if err != nil {
@@ -83,7 +83,7 @@ func TestUpload(t *testing.T) {
 }
 
 func TestServer_Start(t *testing.T) {
-	params := &common.Params{Host: "localhost", Port: 28084, Timeout: 20 * time.Millisecond}
+	params := &common.Params{Host: "localhost", Port: 28084, Timeout: 20 * time.Millisecond, Clients: 1}
 	s, err := New(params)
 
 	if err != nil {
@@ -137,7 +137,9 @@ func TestServer_Handle(t *testing.T) {
 		},
 	}
 
-	server := httptest.NewServer(http.HandlerFunc(rootHandler(nil, handlers)))
+	semaphore := make(chan struct{}, 1)
+	server := httptest.NewServer(http.HandlerFunc(rootHandler(semaphore, nil, handlers)))
+
 	defer server.Close()
 	client := server.Client()
 
@@ -177,7 +179,7 @@ func TestServer_Token(t *testing.T) {
 		}
 	}()
 
-	params := &common.Params{Host: "localhost", Port: 28085, Timeout: 10 * time.Millisecond}
+	params := &common.Params{Host: "localhost", Port: 28085, Timeout: 10 * time.Millisecond, Clients: 1}
 	s, err := New(params)
 
 	if err != nil {

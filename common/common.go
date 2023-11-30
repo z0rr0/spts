@@ -35,7 +35,8 @@ const (
 )
 
 const (
-	maxPortNumber uint64 = 65535
+	// MaxPortNumber is a maximum port number.
+	MaxPortNumber uint64 = 65535
 
 	// DefaultBufSize is a default buffer size for generate transfer.
 	DefaultBufSize = 32 * KB
@@ -59,6 +60,7 @@ type Params struct {
 	Host    string
 	Port    uint64
 	Timeout time.Duration
+	Clients int
 	Dot     bool
 }
 
@@ -78,8 +80,8 @@ type ServiceBase struct {
 
 // Address returns a valid address.
 func Address(host string, port uint64) (string, error) {
-	if port < 1 || port > maxPortNumber {
-		return "", errors.Join(ErrInvalidPort, fmt.Errorf("port must be between 1 and %d", maxPortNumber))
+	if port < 1 || port > MaxPortNumber {
+		return "", errors.Join(ErrInvalidPort, fmt.Errorf("port must be between 1 and %d", MaxPortNumber))
 	}
 
 	return net.JoinHostPort(host, strconv.FormatUint(port, 10)), nil

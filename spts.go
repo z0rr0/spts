@@ -36,6 +36,7 @@ func main() {
 		port       uint64 = 28082
 		host              = "localhost"
 		timeout           = 3 * time.Second
+		clients           = 1
 	)
 
 	defer func() {
@@ -45,12 +46,13 @@ func main() {
 	}()
 
 	flag.BoolVar(&serverMode, "server", serverMode, "run in server mode")
-	flag.Uint64Var(&port, "port", port, "port to listen on")
+	flag.Uint64Var(&port, "port", port, "port to listen on"+fmt.Sprintf(" (in range 1..%d)", common.MaxPortNumber))
 	flag.DurationVar(&timeout, "timeout", timeout, "timeout for requests (double value for client)")
 	flag.StringVar(&host, "host", host, "host (listen on for server, connect to for client)")
 	flag.BoolVar(&version, "version", version, "print version and exit")
 	flag.BoolVar(&debug, "debug", debug, "enable debug mode")
-	flag.BoolVar(&dot, "dot", dot, "show dot output (for client mode)")
+	flag.BoolVar(&dot, "dot", dot, "show dot progress output (for client mode)")
+	flag.IntVar(&clients, "clients", clients, "max clients (for server mode)")
 
 	flag.Parse()
 	if version {
@@ -79,7 +81,7 @@ func main() {
 		cancel()
 	}()
 
-	params := &common.Params{Host: host, Port: port, Timeout: timeout, Dot: dot}
+	params := &common.Params{Host: host, Port: port, Timeout: timeout, Clients: clients, Dot: dot}
 	if err := start(ctx, serverMode, params); err != nil {
 		slog.Error("processing", "error", err)
 		os.Exit(1)
