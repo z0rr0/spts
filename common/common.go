@@ -50,8 +50,8 @@ var (
 	ErrInvalidPort = errors.New("invalid port number")
 )
 
-// Mode is a program mode.
-type Mode interface {
+// Starter is a program start interface.
+type Starter interface {
 	Start(ctx context.Context) error
 }
 

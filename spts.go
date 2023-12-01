@@ -99,25 +99,21 @@ func initLogger(debug bool) {
 
 func start(ctx context.Context, serverMode bool, params *common.Params) error {
 	var (
+		s   common.Starter
 		err error
-		m   common.Mode
 	)
 
 	if serverMode {
-		m, err = server.New(params)
-		if err != nil {
-			slog.Error("server.New", "error", err)
-			return err
-		}
+		s, err = server.New(params)
 	} else {
 		params.Timeout *= 2
-
-		m, err = client.New(params)
-		if err != nil {
-			slog.Error("client.New", "error", err)
-			return err
-		}
+		s, err = client.New(params)
 	}
 
-	return m.Start(ctx)
+	if err != nil {
+		slog.Error("start", "error", err)
+		return err
+	}
+
+	return s.Start(ctx)
 }
