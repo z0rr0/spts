@@ -1,8 +1,7 @@
-ARG GOLANG_VERSION="1.21.4"
+ARG GOLANG_VERSION="1.21.5"
 
 FROM golang:${GOLANG_VERSION}-alpine as builder
 ARG LDFLAGS
-RUN apk --no-cache add ca-certificates tzdata
 WORKDIR /go/src/github.com/z0rr0/spts
 COPY . .
 RUN echo "LDFLAGS = $LDFLAGS"
