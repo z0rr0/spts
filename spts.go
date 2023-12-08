@@ -47,7 +47,7 @@ func main() {
 
 	flag.BoolVar(&serverMode, "server", serverMode, "run in server mode")
 	flag.Uint64Var(&port, "port", port, "port to listen on"+fmt.Sprintf(" (in range 1..%d)", common.MaxPortNumber))
-	flag.DurationVar(&timeout, "timeout", timeout, "timeout for requests (double value for client)")
+	flag.DurationVar(&timeout, "timeout", timeout, "timeout for requests (half for client mode)")
 	flag.StringVar(&host, "host", host, "host (listen on for server, connect to for client)")
 	flag.BoolVar(&version, "version", version, "print version and exit")
 	flag.BoolVar(&debug, "debug", debug, "enable debug mode")

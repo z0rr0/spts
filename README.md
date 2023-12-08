@@ -44,7 +44,7 @@ Usage of spts:
   -server
         run in server mode
   -timeout duration
-        timeout for requests (double value for client) (default 3s)
+        timeout for requests (half for client mode) (default 3s)
   -version
         print version and exit
 ```
@@ -65,10 +65,14 @@ It's supported Bearer token authorization for server and client using environmen
 
 ```sh
 # server with multiple tokens
-export SPTS_TOKENS="token1,token2"
+export SPTS_TOKENS="1:token1,2:token2"
 
 # client
-export SPTS_KEY="token1"
+export SPTS_KEY="1:token1"
+
+# where 
+#   - token1 and token2 are some random hex strings
+#   - 1 and 2 are client ID examples, any uint16 values in range 1..65535
 ```
 
 Example how to generate random HEX token for authorization:
