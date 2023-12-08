@@ -21,7 +21,7 @@ const ctxWriterKey ctxType = "writer"
 // ErrRequestFailed is returned when the request failed.
 var ErrRequestFailed = errors.New("request failed")
 
-type handlerType func(context.Context, string, *http.Client) (int64, string, error)
+type handlerType func(context.Context, *auth.Token, *http.Client) (int64, string, error)
 
 // Client is a client data.
 type Client struct {
@@ -58,9 +58,14 @@ func (c *Client) Start(ctx context.Context) error {
 	var (
 		newLine = c.NewLine()
 		writer  = c.writer(ctx)
-		token   = auth.Token()
 	)
-	slog.Debug("token", "length", len(token))
+
+	token, err := auth.ClientToken()
+	if err != nil {
+		return err
+	}
+
+	slog.Debug("token", "client", token.ClientID)
 
 	tr := &http.Transport{
 		Proxy:           http.ProxyFromEnvironment,
@@ -94,7 +99,7 @@ func (c *Client) Start(ctx context.Context) error {
 }
 
 // Upload does a client POST request with body.
-func (c *Client) run(ctx context.Context, client *http.Client, w io.Writer, token string, handler handlerType) (string, string, error) {
+func (c *Client) run(ctx context.Context, client *http.Client, w io.Writer, token *auth.Token, handler handlerType) (string, string, error) {
 	if c.Params.Dot {
 		prg := newProgress(w, time.Second)
 		defer prg.done()
@@ -111,7 +116,7 @@ func (c *Client) run(ctx context.Context, client *http.Client, w io.Writer, toke
 }
 
 // download gets data from server.
-func (c *Client) download(ctx context.Context, token string, client *http.Client) (int64, string, error) {
+func (c *Client) download(ctx context.Context, token *auth.Token, client *http.Client) (int64, string, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
 	defer cancel()
 
@@ -122,8 +127,8 @@ func (c *Client) download(ctx context.Context, token string, client *http.Client
 		return 0, "", errors.Join(ErrRequestFailed, fmt.Errorf("create: %w", err))
 	}
 
-	if token != "" {
-		req.Header.Set(auth.AuthorizationHeader, auth.Prefix+token)
+	if sign := token.String(); sign != "" {
+		req.Header.Set(auth.AuthorizationHeader, auth.Prefix+sign)
 	}
 
 	resp, err := client.Do(req)
@@ -146,7 +151,7 @@ func (c *Client) download(ctx context.Context, token string, client *http.Client
 }
 
 // upload sends data to server.
-func (c *Client) upload(ctx context.Context, token string, client *http.Client) (int64, string, error) {
+func (c *Client) upload(ctx context.Context, token *auth.Token, client *http.Client) (int64, string, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
 	defer cancel()
 
@@ -158,8 +163,8 @@ func (c *Client) upload(ctx context.Context, token string, client *http.Client) 
 		return 0, "", errors.Join(ErrRequestFailed, fmt.Errorf("create: %w", err))
 	}
 
-	if token != "" {
-		req.Header.Set(auth.AuthorizationHeader, auth.Prefix+token)
+	if sign := token.String(); sign != "" {
+		req.Header.Set(auth.AuthorizationHeader, auth.Prefix+sign)
 	}
 
 	resp, err := client.Do(req)

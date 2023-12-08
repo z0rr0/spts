@@ -1,9 +1,19 @@
 package auth
 
 import (
-	"net/http"
+	"bytes"
+	"crypto/hmac"
+	"crypto/sha512"
+	"encoding/base64"
+	"encoding/binary"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"math/rand"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -14,47 +24,174 @@ const (
 	Prefix = "Bearer "
 
 	// ServerEnv is an environment variable name for server's tokens.
+	// It is comma-separated list of "clientID:secret" pairs,
+	// where "secret" is a hex-encoded string, but "clientID" is uint16 value.
 	ServerEnv = "SPTS_TOKENS"
-	clientEnv = "SPTS_KEY"
+
+	// ClientEnv is an environment variable name for client's token.
+	// It is a base64 string with format "<clientID><salt><timestamp><signature>", all values are binary.
+	// Total ize is 106 bytes:
+	// 	clientID - uint16, 2 bytes
+	// 	salt - client's random value, 32 bytes
+	// 	timestamp - int64 UNIX timestamp, 8 bytes (should be synchronized with server with precision 30 seconds)
+	// 	signature - SHA512(clientID + salt + timestamp + secret), 64 bytes
+	ClientEnv = "SPTS_KEY"
+
+	timestampLimit = 30  // seconds
+	saltLength     = 32  // bytes
+	tokenLength    = 106 // bytes
 )
 
-// Authorize checks authorization header and returns true if it is valid.
-// It's very simple implementation without timing attacks protection.
-func Authorize(tokens map[string]struct{}, r *http.Request) bool {
-	if len(tokens) == 0 {
-		return true // no tokens, authorization is not required
+var (
+	// ErrorUnauthorized is an error for unauthorized request.
+	ErrorUnauthorized = errors.New("unauthorized")
+
+	// ErrTokenSignature is an error for invalid token signature.
+	ErrTokenSignature = errors.New("invalid token signature")
+
+	// ErrTokenFormat is an error for invalid token format.
+	ErrTokenFormat = errors.New("invalid token format")
+)
+
+// Token is a client's token.
+type Token struct {
+	ClientID  uint16
+	Secret    []byte
+	Salt      [saltLength]byte
+	timestamp int64
+	signature [sha512.Size]byte
+}
+
+// init sets random salt and current timestamp.
+func (t *Token) init() {
+	var (
+		randomSource CryptoRandSource
+		rnd          = rand.New(randomSource)
+	)
+
+	if t.timestamp == 0 {
+		t.timestamp = time.Now().Unix()
 	}
 
-	authorization := r.Header.Get(AuthorizationHeader)
-	if authorization == "" {
-		return false // no authorization header
+	rnd.Read(t.Salt[:])
+}
+
+// Sign builds token, calculates its signature and returns it with data as common byte slice.
+func (t *Token) Sign() ([]byte, error) {
+	var buf bytes.Buffer
+
+	// write clientID
+	err := binary.Write(&buf, binary.BigEndian, t.ClientID)
+	if err != nil {
+		return nil, err
 	}
 
-	if !strings.HasPrefix(authorization, Prefix) {
-		return false // invalid authorization header format
+	// write salt
+	buf.Write(t.Salt[:])
+
+	// write timestamp
+	err = binary.Write(&buf, binary.BigEndian, t.timestamp)
+	if err != nil {
+		return nil, err
 	}
 
-	if _, ok := tokens[strings.TrimPrefix(authorization, Prefix)]; !ok {
-		return false // invalid token
+	prefixPart := buf.Bytes() // clientID + salt + timestamp
+
+	h := sha512.New()
+	h.Write(prefixPart)
+	h.Write(t.Secret)
+
+	copy(t.signature[:], h.Sum(nil))
+	tokenBinary := append(prefixPart, t.signature[:]...)
+
+	return tokenBinary, nil
+}
+
+// String returns token as base64 string.
+func (t *Token) String() string {
+	if t.ClientID == 0 {
+		return ""
 	}
 
-	return true // known token
+	t.init()
+
+	tokenBinary, err := t.Sign()
+	if err != nil {
+		return ""
+	}
+
+	return base64.StdEncoding.EncodeToString(tokenBinary)
+}
+
+// Verify checks token signature.
+func (t *Token) Verify(signature []byte) error {
+	_, err := t.Sign()
+	if err != nil {
+		return errors.Join(ErrTokenSignature, err)
+	}
+
+	if !hmac.Equal(signature, t.signature[:]) {
+		return ErrTokenSignature
+	}
+
+	return nil
+}
+
+// Equal checks if two tokens are equal.
+// It can be used only for testing, verify signature in production with Verify method.
+func (t *Token) Equal(x *Token) bool {
+	return t.ClientID == x.ClientID && bytes.Equal(t.Secret, x.Secret)
+}
+
+// NewToken returns new token from string "clientID:secret".
+func NewToken(pair string) (*Token, error) {
+	clientPair := strings.Split(pair, ":")
+	if n := len(clientPair); n != 2 {
+		return nil, errors.Join(ErrTokenFormat, fmt.Errorf("invalid pair length: %d", n))
+	}
+
+	clientID, err := strconv.ParseUint(clientPair[0], 10, 16)
+	if err != nil {
+		return nil, errors.Join(ErrTokenFormat, fmt.Errorf("clientID: %w", err))
+	}
+
+	token, err := hex.DecodeString(clientPair[1])
+	if err != nil {
+		return nil, errors.Join(ErrTokenFormat, fmt.Errorf("decode hex value: %w", err))
+	}
+
+	return &Token{ClientID: uint16(clientID), Secret: token}, nil
 }
 
 // LoadTokens loads server's tokens from environment variable.
-func LoadTokens() map[string]struct{} {
-	tokens := make(map[string]struct{})
-
-	for _, token := range strings.Split(strings.Trim(os.Getenv(ServerEnv), ", "), ",") {
-		if t := strings.TrimSpace(token); t != "" {
-			tokens[t] = struct{}{}
-		}
+func LoadTokens() (map[uint16]*Token, error) {
+	value := strings.Trim(os.Getenv(ServerEnv), ", ")
+	if value == "" {
+		return nil, nil
 	}
 
-	return tokens
+	pairs := strings.Split(value, ",")
+	tokens := make(map[uint16]*Token, len(pairs))
+
+	for _, pair := range pairs {
+		token, err := NewToken(pair)
+		if err != nil {
+			return nil, err
+		}
+
+		tokens[token.ClientID] = token
+	}
+
+	return tokens, nil
 }
 
-// Token returns client's token from environment variable.
-func Token() string {
-	return strings.TrimSpace(os.Getenv(clientEnv))
+// ClientToken returns client's token from environment variable.
+func ClientToken() (*Token, error) {
+	value := strings.Trim(os.Getenv(ClientEnv), " ")
+
+	if value == "" {
+		return &Token{}, nil
+	}
+
+	return NewToken(value)
 }

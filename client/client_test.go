@@ -44,7 +44,9 @@ func TestClient_Download(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	count, ip, err := client.download(ctx, "", server.Client())
+	token, _ := auth.ClientToken()
+	count, ip, err := client.download(ctx, token, server.Client())
+
 	if err != nil {
 		t.Errorf("failed download: %v", err)
 	}
@@ -94,7 +96,9 @@ func TestClient_Upload(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	count, ip, err := client.upload(ctx, "", server.Client())
+	token, _ := auth.ClientToken()
+	count, ip, err := client.upload(ctx, token, server.Client())
+
 	if err != nil {
 		t.Errorf("failed upload: %v", err)
 	}
@@ -195,10 +199,14 @@ func TestClient_String(t *testing.T) {
 }
 
 func TestClient_Token(t *testing.T) {
-	tokens := map[string]struct{}{"token1": {}, "token2": {}}
+	serverTokens := map[uint16]*auth.Token{
+		1: {ClientID: 1, Secret: []byte{0x33, 0x12, 0xa1, 0x8b}},
+		2: {ClientID: 2, Secret: []byte{0x66, 0x6b, 0xf6, 0xa2}},
+	}
+	clientToken := &auth.Token{ClientID: 1, Secret: []byte{0x33, 0x12, 0xa1, 0x8b}} // client #1
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !auth.Authorize(tokens, r) {
+		if err := auth.Authorize(r, serverTokens); err != nil {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
@@ -232,17 +240,18 @@ func TestClient_Token(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	_, _, err = client.download(ctx, "token1", server.Client())
+	_, _, err = client.download(ctx, clientToken, server.Client())
 	if err != nil {
 		t.Errorf("failed download: %v", err)
 	}
 
-	_, _, err = client.upload(ctx, "token1", server.Client())
+	_, _, err = client.upload(ctx, clientToken, server.Client())
 	if err != nil {
 		t.Errorf("failed upload: %v", err)
 	}
 
-	_, _, err = client.download(ctx, "token3", server.Client())
+	clientToken.ClientID = 3 // unknown client
+	_, _, err = client.download(ctx, clientToken, server.Client())
 	if err == nil {
 		t.Errorf("error expected")
 	}

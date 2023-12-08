@@ -47,7 +47,10 @@ func (s *Server) Start(ctx context.Context) error {
 	semaphore := make(chan struct{}, s.Clients) // limit concurrent requests
 	defer close(semaphore)
 
-	srv := s.createHandlers(semaphore)
+	srv, err := s.createHandlers(semaphore)
+	if err != nil {
+		return err
+	}
 	connectionsClosed := make(chan struct{})
 
 	go func() {
@@ -55,14 +58,14 @@ func (s *Server) Start(ctx context.Context) error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()
 
-		if err := srv.Shutdown(shutdownCtx); err != nil {
-			slog.Error("HTTP server Shutdown error", "error", err)
+		if e := srv.Shutdown(shutdownCtx); e != nil {
+			slog.Error("HTTP server Shutdown error", "error", e)
 		}
 		close(connectionsClosed)
 	}()
 
 	slog.Info("HTTP server starting", "PID", os.Getpid(), "address", s.Address, "timeout", s.Timeout)
-	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+	if err = srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		slog.Error("HTTP server ListenAndServe error", "error", err)
 	}
 
@@ -71,8 +74,12 @@ func (s *Server) Start(ctx context.Context) error {
 	return nil
 }
 
-func (s *Server) createHandlers(semaphore chan struct{}) *http.Server {
-	tokens := auth.LoadTokens()
+func (s *Server) createHandlers(semaphore chan struct{}) (*http.Server, error) {
+	tokens, err := auth.LoadTokens()
+	if err != nil {
+		return nil, err
+	}
+
 	slog.Debug("tokens", "count", len(tokens))
 
 	handlers := map[string]handlerType{
@@ -83,13 +90,15 @@ func (s *Server) createHandlers(semaphore chan struct{}) *http.Server {
 	mux.HandleFunc("/", rootHandler(semaphore, tokens, handlers))
 
 	timeout := s.Timeout * 2
-	return &http.Server{
+	server := &http.Server{
 		Addr:           s.Address,
 		Handler:        mux,
 		ReadTimeout:    timeout,
 		WriteTimeout:   timeout,
 		MaxHeaderBytes: common.KB,
 	}
+
+	return server, nil
 }
 
 // download writes data to client.
@@ -172,7 +181,7 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func rootHandler(semaphore chan struct{}, tokens map[string]struct{}, handlers map[string]handlerType) func(http.ResponseWriter, *http.Request) {
+func rootHandler(semaphore chan struct{}, tokens map[uint16]*auth.Token, handlers map[string]handlerType) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		semaphore <- struct{}{}
 		var (
@@ -193,7 +202,8 @@ func rootHandler(semaphore chan struct{}, tokens map[string]struct{}, handlers m
 			<-semaphore // release semaphore for next request
 		}()
 
-		if !auth.Authorize(tokens, r) {
+		if err := auth.Authorize(r, tokens); err != nil {
+			slog.Error("unauthorized", "error", err)
 			code = http.StatusUnauthorized
 			return
 		}

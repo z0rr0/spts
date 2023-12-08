@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -168,7 +169,17 @@ func TestServer_Handle(t *testing.T) {
 }
 
 func TestServer_Token(t *testing.T) {
-	err := os.Setenv(auth.ServerEnv, "token1,token2")
+	serverTokens := map[uint16]*auth.Token{
+		1: {ClientID: 1, Secret: []byte{0x33, 0x12, 0xa1, 0x8b}},
+		2: {ClientID: 2, Secret: []byte{0x66, 0x6b, 0xf6, 0xa2}},
+	}
+
+	token1 := "1:" + hex.EncodeToString(serverTokens[1].Secret)
+	token2 := "2:" + hex.EncodeToString(serverTokens[2].Secret)
+
+	clientToken := &auth.Token{ClientID: 1, Secret: []byte{0x33, 0x12, 0xa1, 0x8b}} // client #1
+	err := os.Setenv(auth.ServerEnv, token1+","+token2)
+
 	if err != nil {
 		t.Fatalf("failed to set environment variable: %v", err)
 	}
@@ -215,7 +226,7 @@ func TestServer_Token(t *testing.T) {
 			return
 		}
 
-		req.Header.Add(auth.AuthorizationHeader, auth.Prefix+"token1")
+		req.Header.Add(auth.AuthorizationHeader, auth.Prefix+clientToken.String())
 		if resp, e = client.Do(req); e != nil {
 			t.Errorf("failed to download: %v", e)
 			return

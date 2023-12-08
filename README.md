@@ -71,10 +71,11 @@ export SPTS_TOKENS="token1,token2"
 export SPTS_KEY="token1"
 ```
 
-Example to generate random token:
+Example how to generate random HEX token for authorization:
 
 ```sh
-head -c 32 /dev/urandom| base64
+# read random 32 bytes
+head -c 32 /dev/urandom| xxd -p -c 64
 ```
 
 ### Docker
