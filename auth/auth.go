@@ -30,7 +30,7 @@ const (
 
 	// ClientEnv is an environment variable name for client's token.
 	// It is a base64 string with format "<clientID><salt><timestamp><signature>", all values are binary.
-	// Total ize is 106 bytes:
+	// Total size is 106 bytes:
 	// 	clientID - uint16, 2 bytes
 	// 	salt - client's random value, 32 bytes
 	// 	timestamp - int64 UNIX timestamp, 8 bytes (should be synchronized with server with precision 30 seconds)
@@ -65,8 +65,8 @@ type Token struct {
 // init sets random salt and current timestamp.
 func (t *Token) init() error {
 	var (
-		randomSource CryptoRandSource
-		rnd          = rand.New(randomSource)
+		randSource = new(CryptoRandSource)
+		rnd        = rand.New(randSource)
 	)
 
 	if t.timestamp == 0 {
@@ -74,39 +74,32 @@ func (t *Token) init() error {
 	}
 
 	_, err := rnd.Read(t.Salt[:])
-	return err
+	if err != nil {
+		return err
+	}
+
+	return randSource.Err
 }
 
 // Sign builds token, calculates its signature and returns it with data as common byte slice.
 func (t *Token) Sign() ([]byte, error) {
-	var buf bytes.Buffer
-	buf.Grow(tokenLength)
+	const prefixLen = 42 // clientID + salt + timestamp = 2 + 32 + 8 = 42 bytes
+	buf := make([]byte, tokenLength)
 
-	// write clientID
-	err := binary.Write(&buf, binary.BigEndian, t.ClientID)
-	if err != nil {
-		return nil, err
-	}
+	binary.BigEndian.PutUint16(buf, t.ClientID)
+	copy(buf[2:], t.Salt[:])
+	binary.BigEndian.PutUint64(buf[2+saltLength:], uint64(t.timestamp))
 
-	// write salt
-	buf.Write(t.Salt[:])
-
-	// write timestamp
-	err = binary.Write(&buf, binary.BigEndian, t.timestamp)
-	if err != nil {
-		return nil, err
-	}
-
-	prefixPart := buf.Bytes() // clientID + salt + timestamp
+	prefixPart := buf[:prefixLen]
 
 	h := sha512.New()
 	h.Write(prefixPart)
 	h.Write(t.Secret)
 
 	copy(t.signature[:], h.Sum(nil))
-	buf.Write(t.signature[:])
+	copy(buf[prefixLen:], t.signature[:])
 
-	return buf.Bytes(), nil
+	return buf, nil
 }
 
 // String returns token as base64 string.
