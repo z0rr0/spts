@@ -63,7 +63,7 @@ type Token struct {
 }
 
 // init sets random salt and current timestamp.
-func (t *Token) init() {
+func (t *Token) init() error {
 	var (
 		randomSource CryptoRandSource
 		rnd          = rand.New(randomSource)
@@ -73,12 +73,14 @@ func (t *Token) init() {
 		t.timestamp = time.Now().Unix()
 	}
 
-	rnd.Read(t.Salt[:])
+	_, err := rnd.Read(t.Salt[:])
+	return err
 }
 
 // Sign builds token, calculates its signature and returns it with data as common byte slice.
 func (t *Token) Sign() ([]byte, error) {
 	var buf bytes.Buffer
+	buf.Grow(tokenLength)
 
 	// write clientID
 	err := binary.Write(&buf, binary.BigEndian, t.ClientID)
@@ -102,9 +104,9 @@ func (t *Token) Sign() ([]byte, error) {
 	h.Write(t.Secret)
 
 	copy(t.signature[:], h.Sum(nil))
-	tokenBinary := append(prefixPart, t.signature[:]...)
+	buf.Write(t.signature[:])
 
-	return tokenBinary, nil
+	return buf.Bytes(), nil
 }
 
 // String returns token as base64 string.
@@ -113,7 +115,9 @@ func (t *Token) String() string {
 		return ""
 	}
 
-	t.init()
+	if err := t.init(); err != nil {
+		return ""
+	}
 
 	tokenBinary, err := t.Sign()
 	if err != nil {
@@ -125,8 +129,7 @@ func (t *Token) String() string {
 
 // Verify checks token signature.
 func (t *Token) Verify(signature []byte) error {
-	_, err := t.Sign()
-	if err != nil {
+	if _, err := t.Sign(); err != nil {
 		return errors.Join(ErrTokenSignature, err)
 	}
 

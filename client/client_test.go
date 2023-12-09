@@ -44,7 +44,11 @@ func TestClient_Download(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	token, _ := auth.ClientToken()
+	token, err := auth.ClientToken()
+	if err != nil {
+		t.Fatalf("failed to create token: %v", err)
+	}
+
 	count, ip, err := client.download(ctx, token, server.Client())
 
 	if err != nil {
@@ -96,7 +100,11 @@ func TestClient_Upload(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	token, _ := auth.ClientToken()
+	token, err := auth.ClientToken()
+	if err != nil {
+		t.Fatalf("failed to create token: %v", err)
+	}
+
 	count, ip, err := client.upload(ctx, token, server.Client())
 
 	if err != nil {
