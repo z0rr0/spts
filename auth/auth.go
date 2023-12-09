@@ -34,12 +34,16 @@ const (
 	// 	clientID - uint16, 2 bytes
 	// 	salt - client's random value, 32 bytes
 	// 	timestamp - int64 UNIX timestamp, 8 bytes (should be synchronized with server with precision 30 seconds)
-	// 	signature - SHA512(clientID + salt + timestamp + secret), 64 bytes
+	// 	signature - SHA512(clientID + salt + timestamp + secret), 64 bytes sha512.Size
 	ClientEnv = "SPTS_KEY"
 
-	timestampLimit = 30  // seconds
-	saltLength     = 32  // bytes
-	tokenLength    = 106 // bytes
+	clientIDLength  = 2  // bytes
+	saltLength      = 32 // bytes
+	timestampLength = 8  // bytes
+	tokenLength     = clientIDLength + saltLength + timestampLength + sha512.Size
+
+	// timestampLimit is a limit for UNIX time difference between client and server.
+	timestampLimit = 30 // seconds
 )
 
 var (
@@ -83,12 +87,12 @@ func (t *Token) init() error {
 
 // Sign builds token, calculates its signature and returns it with data as common byte slice.
 func (t *Token) Sign() ([]byte, error) {
-	const prefixLen = 42 // clientID + salt + timestamp = 2 + 32 + 8 = 42 bytes
+	const prefixLen = clientIDLength + saltLength + timestampLength
 	buf := make([]byte, tokenLength)
 
 	binary.BigEndian.PutUint16(buf, t.ClientID)
-	copy(buf[2:], t.Salt[:])
-	binary.BigEndian.PutUint64(buf[2+saltLength:], uint64(t.timestamp))
+	copy(buf[clientIDLength:], t.Salt[:])
+	binary.BigEndian.PutUint64(buf[clientIDLength+saltLength:], uint64(t.timestamp))
 
 	prefixPart := buf[:prefixLen]
 
