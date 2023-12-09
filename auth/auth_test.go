@@ -273,6 +273,7 @@ func TestAuthorize(t *testing.T) {
 		header       string
 		noHeader     bool
 		serverTokens map[uint16]*Token
+		clientID     uint16
 		withError    bool
 	}{
 		{name: "empty"},
@@ -286,6 +287,7 @@ func TestAuthorize(t *testing.T) {
 			name:         "valid",
 			header:       Prefix + serverTokens[1].String(),
 			serverTokens: serverTokens,
+			clientID:     1,
 		},
 		{
 			name:         "failed_header_prefix",
@@ -334,12 +336,18 @@ func TestAuthorize(t *testing.T) {
 				r.Header.Set(AuthorizationHeader, tc.header)
 			}
 
-			err := Authorize(r, tc.serverTokens)
+			clientID, err := Authorize(r, tc.serverTokens)
 			if (err != nil) != tc.withError {
 				t.Errorf("Authorize() error = %v, wantErr %v", err, tc.withError)
 			}
 
-			t.Logf("name=%s, err=%v\n", tc.name, err)
+			if err != nil {
+				return
+			}
+
+			if clientID != tc.clientID {
+				t.Errorf("Authorize clientID %d, want %d", clientID, tc.clientID)
+			}
 		})
 	}
 }

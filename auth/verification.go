@@ -11,15 +11,15 @@ import (
 	"time"
 )
 
-// Authorize checks authorization header and returns true if it is valid.
-func Authorize(r *http.Request, serverTokens map[uint16]*Token) error {
+// Authorize checks authorization header and returns clientID and true if request info is valid.
+func Authorize(r *http.Request, serverTokens map[uint16]*Token) (uint16, error) {
 	if len(serverTokens) == 0 {
-		return nil // no tokens, authorization is not required
+		return 0, nil // no tokens, authorization is not required
 	}
 
 	token, err := parseHeader(r.Header.Get(AuthorizationHeader))
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	return verifyToken(token, serverTokens)
@@ -46,7 +46,7 @@ func parseHeader(header string) ([]byte, error) {
 	return token, nil
 }
 
-func verifyToken(token []byte, serverTokens map[uint16]*Token) error {
+func verifyToken(token []byte, serverTokens map[uint16]*Token) (uint16, error) {
 	const (
 		clientIDLength  = 2
 		timestampLength = 8
@@ -57,19 +57,19 @@ func verifyToken(token []byte, serverTokens map[uint16]*Token) error {
 	err := binary.Read(bytes.NewReader(clientIDBytes), binary.BigEndian, &clientID)
 
 	if err != nil {
-		return errors.Join(ErrorUnauthorized, fmt.Errorf("clientID parse: %w", err))
+		return 0, errors.Join(ErrorUnauthorized, fmt.Errorf("clientID parse: %w", err))
 	}
 
 	serverToken, ok := serverTokens[clientID]
 	if !ok {
-		return errors.Join(ErrorUnauthorized, fmt.Errorf("unknown clientID: %d", clientID))
+		return 0, errors.Join(ErrorUnauthorized, fmt.Errorf("unknown clientID: %d", clientID))
 	}
 
 	offset := clientIDLength + saltLength
 	timestamp, err := verifyTimestamp(token[offset : offset+timestampLength])
 
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	clientToken := &Token{
@@ -81,7 +81,11 @@ func verifyToken(token []byte, serverTokens map[uint16]*Token) error {
 	copy(clientToken.Salt[:], token[clientIDLength:offset])
 	signature := token[offset+timestampLength:]
 
-	return clientToken.Verify(signature)
+	if err = clientToken.Verify(signature); err != nil {
+		return 0, err
+	}
+
+	return clientID, nil
 }
 
 func verifyTimestamp(value []byte) (int64, error) {

@@ -185,9 +185,11 @@ func rootHandler(semaphore chan struct{}, tokens map[uint16]*auth.Token, handler
 	return func(w http.ResponseWriter, r *http.Request) {
 		semaphore <- struct{}{}
 		var (
-			start = time.Now()
-			code  = http.StatusOK
-			url   = strings.TrimRight(r.URL.Path, "/ ")
+			start  = time.Now()
+			code   = http.StatusOK
+			url    = strings.TrimRight(r.URL.Path, "/ ")
+			client uint16
+			err    error
 		)
 		slog.Info("request received", "method", r.Method, "url", url, "remoteAddr", r.RemoteAddr)
 
@@ -197,12 +199,14 @@ func rootHandler(semaphore chan struct{}, tokens map[uint16]*auth.Token, handler
 			}
 			slog.Info(
 				"request done",
-				"method", r.Method, "code", code, "duration", time.Since(start), "remoteAddr", r.RemoteAddr,
+				"method", r.Method, "code", code, "duration", time.Since(start),
+				"client", client, "remoteAddr", r.RemoteAddr,
 			)
 			<-semaphore // release semaphore for next request
 		}()
 
-		if err := auth.Authorize(r, tokens); err != nil {
+		client, err = auth.Authorize(r, tokens)
+		if err != nil {
 			slog.Error("unauthorized", "error", err)
 			code = http.StatusUnauthorized
 			return
@@ -214,7 +218,7 @@ func rootHandler(semaphore chan struct{}, tokens map[uint16]*auth.Token, handler
 			return
 		}
 
-		if err := handler(w, r); err != nil {
+		if err = handler(w, r); err != nil {
 			slog.Error("request", "error", err)
 			if strings.Contains(err.Error(), "http: request body too large") {
 				code = http.StatusRequestEntityTooLarge

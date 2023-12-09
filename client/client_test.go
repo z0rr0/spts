@@ -214,7 +214,7 @@ func TestClient_Token(t *testing.T) {
 	clientToken := &auth.Token{ClientID: 1, Secret: []byte{0x33, 0x12, 0xa1, 0x8b}} // client #1
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := auth.Authorize(r, serverTokens); err != nil {
+		if _, err := auth.Authorize(r, serverTokens); err != nil {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
