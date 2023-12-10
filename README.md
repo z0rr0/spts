@@ -82,6 +82,11 @@ Example how to generate random HEX token for authorization:
 head -c 32 /dev/urandom| xxd -p -c 64
 ```
 
+The application doesn't encrypt data, because there is no sensitive information (only random bytes).
+But authorization token is not sent in plain text.
+Common secrets are used to generate sha512 hash signature
+which will be encoded in base64 format and added to HTTP header.
+
 ### Docker
 
 Build image:
