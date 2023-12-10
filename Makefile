@@ -10,6 +10,11 @@ DOCKER_TAG=z0rr0/spts
 # go test -cover -v -race -coverprofile=coverage.out -trace trace.out github.com/z0rr0/spts/client
 # go tool cover -html=coverage.out
 
+# linters
+# go install github.com/securego/gosec/v2/cmd/gosec@latest
+# go install honnef.co/go/tools/cmd/staticcheck@latest
+# and https://golangci-lint.run/usage/install/#local-installation
+
 all: test
 
 build:
