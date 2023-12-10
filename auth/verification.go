@@ -48,8 +48,8 @@ func parseHeader(header string) ([]byte, error) {
 
 func verifyToken(token []byte, serverTokens map[uint16]*Token) (uint16, error) {
 	const (
-		clientIDLength  = 2
-		timestampLength = 8
+		saltEnd      = clientIDLength + saltLength
+		timestampEnd = saltEnd + timestampLength
 	)
 	var clientID uint16
 
@@ -65,9 +65,7 @@ func verifyToken(token []byte, serverTokens map[uint16]*Token) (uint16, error) {
 		return 0, errors.Join(ErrorUnauthorized, fmt.Errorf("unknown clientID: %d", clientID))
 	}
 
-	offset := clientIDLength + saltLength
-	timestamp, err := verifyTimestamp(token[offset : offset+timestampLength])
-
+	timestamp, err := verifyTimestamp(token[saltEnd:timestampEnd])
 	if err != nil {
 		return 0, err
 	}
@@ -78,11 +76,11 @@ func verifyToken(token []byte, serverTokens map[uint16]*Token) (uint16, error) {
 		timestamp: timestamp,
 	}
 
-	copy(clientToken.Salt[:], token[clientIDLength:offset])
-	signature := token[offset+timestampLength:]
+	copy(clientToken.salt[:], token[clientIDLength:saltEnd])
+	signature := token[timestampEnd:]
 
-	if err = clientToken.Verify(signature); err != nil {
-		return 0, err
+	if !clientToken.Verify(signature) {
+		return 0, ErrTokenSignature
 	}
 
 	return clientID, nil

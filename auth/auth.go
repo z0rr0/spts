@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math/rand"
 	"os"
 	"strconv"
@@ -61,7 +62,7 @@ var (
 type Token struct {
 	ClientID  uint16
 	Secret    []byte
-	Salt      [saltLength]byte
+	salt      [saltLength]byte
 	timestamp int64
 	signature [sha512.Size]byte
 }
@@ -77,7 +78,7 @@ func (t *Token) init() error {
 		t.timestamp = time.Now().Unix()
 	}
 
-	_, err := rnd.Read(t.Salt[:])
+	_, err := rnd.Read(t.salt[:])
 	if err != nil {
 		return err
 	}
@@ -86,12 +87,12 @@ func (t *Token) init() error {
 }
 
 // Sign builds token, calculates its signature and returns it with data as common byte slice.
-func (t *Token) Sign() ([]byte, error) {
+func (t *Token) Sign() []byte {
 	const prefixLen = clientIDLength + saltLength + timestampLength
 	buf := make([]byte, tokenLength)
 
 	binary.BigEndian.PutUint16(buf, t.ClientID)
-	copy(buf[clientIDLength:], t.Salt[:])
+	copy(buf[clientIDLength:], t.salt[:])
 	binary.BigEndian.PutUint64(buf[clientIDLength+saltLength:], uint64(t.timestamp))
 
 	prefixPart := buf[:prefixLen]
@@ -103,7 +104,7 @@ func (t *Token) Sign() ([]byte, error) {
 	copy(t.signature[:], h.Sum(nil))
 	copy(buf[prefixLen:], t.signature[:])
 
-	return buf, nil
+	return buf
 }
 
 // String returns token as base64 string.
@@ -113,28 +114,17 @@ func (t *Token) String() string {
 	}
 
 	if err := t.init(); err != nil {
+		slog.Error("token_init", "error", err)
 		return ""
 	}
 
-	tokenBinary, err := t.Sign()
-	if err != nil {
-		return ""
-	}
-
-	return base64.StdEncoding.EncodeToString(tokenBinary)
+	return base64.StdEncoding.EncodeToString(t.Sign())
 }
 
 // Verify checks token signature.
-func (t *Token) Verify(signature []byte) error {
-	if _, err := t.Sign(); err != nil {
-		return errors.Join(ErrTokenSignature, err)
-	}
-
-	if !hmac.Equal(signature, t.signature[:]) {
-		return ErrTokenSignature
-	}
-
-	return nil
+func (t *Token) Verify(signature []byte) bool {
+	t.Sign() // update signature by current token values
+	return hmac.Equal(signature, t.signature[:])
 }
 
 // Equal checks if two tokens are equal.

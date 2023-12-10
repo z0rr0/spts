@@ -19,7 +19,7 @@ func (c *CryptoRandSource) Int63() int64 {
 		return 0
 	}
 
-	return int64(binary.LittleEndian.Uint64(b[:]) & (1<<63 - 1))
+	return int64(binary.NativeEndian.Uint64(b[:]) & (1<<63 - 1))
 }
 
 // Seed is a fake implementation for rand.Source interface from math/rand.

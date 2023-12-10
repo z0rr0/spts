@@ -232,7 +232,7 @@ func TestToken_Verify(t *testing.T) {
 			}
 
 			if tc.touchSalt {
-				tc.token.Salt[0] = tc.token.Salt[0] << 1
+				tc.token.salt[0] = tc.token.salt[0] << 1
 			}
 
 			if tc.touchTimestamp {
@@ -247,11 +247,11 @@ func TestToken_Verify(t *testing.T) {
 			offset := len(data) - sha512.Size
 			signature := data[offset:]
 
-			err = tc.token.Verify(signature)
+			ok := tc.token.Verify(signature)
 			withError := tc.touchSecret || tc.touchClientID || tc.touchSalt || tc.touchTimestamp
 
-			if (err != nil) != withError {
-				t.Errorf("Verify() error = %v, wantErr %v", err, withError)
+			if ok != !withError {
+				t.Errorf("Verify() = %v, want %v", ok, !withError)
 			}
 		})
 	}
