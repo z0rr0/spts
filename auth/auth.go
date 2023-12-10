@@ -3,6 +3,7 @@ package auth
 import (
 	"bytes"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha512"
 	"encoding/base64"
 	"encoding/binary"
@@ -10,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math/rand"
 	"os"
 	"strconv"
 	"strings"
@@ -69,21 +69,16 @@ type Token struct {
 
 // init sets random salt and current timestamp.
 func (t *Token) init() error {
-	var (
-		randSource = new(CryptoRandSource)
-		rnd        = rand.New(randSource)
-	)
-
 	if t.timestamp == 0 {
 		t.timestamp = time.Now().Unix()
 	}
 
-	_, err := rnd.Read(t.salt[:])
+	_, err := rand.Read(t.salt[:])
 	if err != nil {
-		return err
+		return fmt.Errorf("read random: %w", err)
 	}
 
-	return randSource.Err
+	return nil
 }
 
 // Sign builds token, calculates its signature and returns it with data as common byte slice.

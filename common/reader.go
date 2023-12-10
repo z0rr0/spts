@@ -21,7 +21,7 @@ type Reader struct {
 // with the given buffer size until the context is canceled or timed out.
 func NewReader(ctx context.Context) *Reader {
 	r := &Reader{
-		rnd:     rand.New(rand.NewSource(time.Now().UnixNano())),
+		rnd:     rand.New(rand.NewSource(time.Now().UnixNano())), //#nosec G404 - this data is not security sensitive
 		errChan: make(chan error),
 	}
 

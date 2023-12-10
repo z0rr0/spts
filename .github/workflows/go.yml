@@ -17,12 +17,15 @@ jobs:
         uses: actions/setup-go@v4
         with:
           go-version: "1.21"
+
       - name: Test
-        run: make all
+        run: make gh
+
       - name: Run Gosec Security Scanner
         uses: securego/gosec@master
         with:
           args: ./...
+
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v3
         with:
