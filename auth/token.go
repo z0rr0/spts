@@ -99,26 +99,35 @@ func (t *Token) Build() ([]byte, error) {
 
 // Handshake is called by clients to send token to server and receive one back.
 func (t *Token) Handshake(rw io.ReadWriter) error {
+	if rw == nil {
+		return errors.New("nil reader/writer")
+	}
+
 	header, err := t.Build()
 	if err != nil {
 		return err
 	}
 
 	// send token to server
-	if _, err = rw.Write(header); err != nil {
-		return fmt.Errorf("write header: %w", err)
+	n, err := rw.Write(header)
+	if err != nil {
+		return fmt.Errorf("failed to write header data: %w", err)
+	}
+
+	if n != lenToken {
+		return errors.New("invalid write token length")
 	}
 
 	// receive reply-token from server
 	header = make([]byte, lenToken)
-	n, err := rw.Read(header)
+	n, err = rw.Read(header)
 
 	if err != nil {
 		return fmt.Errorf("failed to read header data: %w", err)
 	}
 
 	if n != lenToken {
-		return errors.New("invalid token length")
+		return errors.New("invalid read token length")
 	}
 
 	tokens := map[uint16]*Token{t.ClientID: t}

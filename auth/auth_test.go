@@ -1,10 +1,16 @@
 package auth
 
 import (
+	"bytes"
 	"crypto/sha512"
+	"encoding/binary"
+	"errors"
 	"fmt"
+	"io"
 	"os"
+	"strings"
 	"testing"
+	"time"
 )
 
 func compareTokens(a, b map[uint16]*Token) error {
@@ -168,6 +174,129 @@ func TestNewToken(t *testing.T) {
 	}
 }
 
+func testTokenReader(secret []byte, changes map[int]byte) io.Reader {
+	header := make([]byte, lenToken)
+	header[2] = 1 // clientID
+
+	timestamp := time.Now().Unix()
+	binary.BigEndian.PutUint64(header[endSalt:], uint64(timestamp))
+
+	for i, v := range changes {
+		header[i] = v
+	}
+
+	if secret != nil {
+		prefixPart := header[:endTime]
+
+		h := sha512.New()
+		h.Write(prefixPart)
+		h.Write(secret)
+
+		copy(header[endTime:], h.Sum(nil))
+	}
+
+	return bytes.NewReader(header)
+}
+
+func TestVerify(t *testing.T) {
+	testCases := []struct {
+		name      string
+		tokens    map[uint16]*Token
+		reader    io.Reader
+		errSubstr string
+	}{
+		{
+			name: "empty_tokens",
+		},
+		{
+			name: "empty_reader",
+			tokens: map[uint16]*Token{
+				1: {ClientID: 1, Secret: []byte{0x33, 0x12, 0xa1, 0x8b}},
+			},
+			reader:    bytes.NewReader(nil),
+			errSubstr: "failed to read header data: ",
+		},
+		{
+			name: "invalid_length",
+			tokens: map[uint16]*Token{
+				1: {ClientID: 1, Secret: []byte{0x33, 0x12, 0xa1, 0x8b}},
+			},
+			reader:    bytes.NewReader([]byte{0x01, 0x02, 0x03}),
+			errSubstr: "invalid token length",
+		},
+		{
+			name: "invalid_client_id",
+			tokens: map[uint16]*Token{
+				1: {ClientID: 1, Secret: []byte{0x33, 0x12, 0xa1, 0x8b}},
+			},
+			reader:    testTokenReader(nil, map[int]byte{1: 0x02}),
+			errSubstr: "unknown clientID",
+		},
+		{
+			name: "invalid_timestamp",
+			tokens: map[uint16]*Token{
+				1: {ClientID: 1, Secret: []byte{0x33, 0x12, 0xa1, 0x8b}},
+			},
+			reader: testTokenReader(nil, map[int]byte{
+				endSalt:     0x00,
+				endSalt + 1: 0x00,
+				endSalt + 2: 0x00,
+				endSalt + 3: 0x00,
+				endSalt + 4: 0x00,
+				endSalt + 5: 0x00,
+				endSalt + 6: 0x00,
+				endSalt + 7: 0x01,
+			}),
+			errSubstr: "not synchronized time",
+		},
+		{
+			name: "invalid_signature",
+			tokens: map[uint16]*Token{
+				1: {ClientID: 1, Secret: []byte{0x33, 0x12, 0xa1, 0x8b}},
+			},
+			reader:    testTokenReader(nil, nil),
+			errSubstr: "invalid token signature",
+		},
+		{
+			name: "valid",
+			tokens: map[uint16]*Token{
+				1: {ClientID: 1, Secret: []byte{0x33, 0x12, 0xa1, 0x8b}},
+			},
+			reader: testTokenReader([]byte{0x33, 0x12, 0xa1, 0x8b}, nil),
+		},
+	}
+
+	for i := range testCases {
+		tc := testCases[i]
+
+		t.Run(tc.name, func(t *testing.T) {
+			token, err := Verify(tc.reader, tc.tokens)
+			if err != nil {
+				if tc.errSubstr == "" {
+					t.Errorf("Verify() error = %v, want nil", err)
+					return
+				}
+
+				if errStr := err.Error(); !strings.Contains(errStr, tc.errSubstr) {
+					t.Errorf("Verify() error = %v, want %v", errStr, tc.errSubstr)
+				}
+				return
+			}
+
+			if token == nil {
+				if len(tc.tokens) != 0 {
+					t.Error("Verify() token = nil")
+				}
+				return
+			}
+
+			if !token.Equal(tc.tokens[1]) {
+				t.Errorf("Verify() token = %v, want %v", token, tc.tokens[1])
+			}
+		})
+	}
+}
+
 func TestToken_Verify(t *testing.T) {
 	testCases := []struct {
 		name           string
@@ -241,6 +370,127 @@ func TestToken_Verify(t *testing.T) {
 
 			if ok != !withError {
 				t.Errorf("Verify() = %v, want %v", ok, !withError)
+			}
+		})
+	}
+}
+
+func TestToken_Build(t *testing.T) {
+	// useless, just for coverage
+	token := &Token{ClientID: 1, Secret: []byte{0x33, 0x12, 0xa1, 0x8b}}
+
+	data, err := token.Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	prefixPart := data[:endTime]
+
+	h := sha512.New()
+	h.Write(prefixPart)
+	h.Write(token.Secret)
+
+	if signature := h.Sum(nil); !bytes.Equal(signature, token.signature[:]) {
+		t.Errorf("Build() = %v, want %v", signature, token.signature[:])
+	}
+}
+
+type failedWriter struct {
+	length int
+}
+
+func (fw *failedWriter) Write(_ []byte) (int, error) {
+	return 0, errors.New("test")
+}
+
+func (fw *failedWriter) Read(_ []byte) (int, error) {
+	return fw.length, nil
+}
+
+type failedReader struct {
+	length int
+}
+
+func (fr *failedReader) Write(_ []byte) (int, error) {
+	return fr.length, nil
+}
+
+func (fr *failedReader) Read(_ []byte) (int, error) {
+	return 0, errors.New("test")
+}
+
+type testReadWriter struct {
+	lengthW int
+	lengthR int
+}
+
+func (trw *testReadWriter) Write(_ []byte) (int, error) {
+	return trw.lengthW, nil
+}
+
+func (trw *testReadWriter) Read(_ []byte) (int, error) {
+	return trw.lengthR, nil
+}
+
+func TestToken_Handshake(t *testing.T) {
+	testCases := []struct {
+		name      string
+		token     *Token
+		rw        io.ReadWriter
+		errSubstr string
+	}{
+		{
+			name:      "empty",
+			token:     &Token{ClientID: 10, Secret: []byte{0x33, 0x12, 0xa1, 0x8b}},
+			errSubstr: "nil reader/writer",
+		},
+		{
+			name:      "failed_write",
+			token:     &Token{ClientID: 10, Secret: []byte{0x33, 0x12, 0xa1, 0x8b}},
+			rw:        &failedWriter{},
+			errSubstr: "failed to write header data:",
+		},
+		{
+			name:      "failed_write_length",
+			token:     &Token{ClientID: 10, Secret: []byte{0x33, 0x12, 0xa1, 0x8b}},
+			rw:        &testReadWriter{lengthW: lenToken + 1},
+			errSubstr: "invalid write token length",
+		},
+		{
+			name:      "failed_read",
+			token:     &Token{ClientID: 10, Secret: []byte{0x33, 0x12, 0xa1, 0x8b}},
+			rw:        &failedReader{lenToken},
+			errSubstr: "failed to read header data:",
+		},
+		{
+			name:      "failed_read_length",
+			token:     &Token{ClientID: 10, Secret: []byte{0x33, 0x12, 0xa1, 0x8b}},
+			rw:        &testReadWriter{lengthW: lenToken, lengthR: lenToken + 1},
+			errSubstr: "invalid read token length",
+		},
+		{
+			name:      "unknown_client_id",
+			token:     &Token{ClientID: 10, Secret: []byte{0x33, 0x12, 0xa1, 0x8b}},
+			rw:        &testReadWriter{lengthW: lenToken, lengthR: lenToken},
+			errSubstr: "unknown clientID",
+		},
+	}
+
+	for i := range testCases {
+		tc := testCases[i]
+
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.token.Handshake(tc.rw)
+			if err != nil {
+				if tc.errSubstr == "" {
+					t.Errorf("Handshake() error = %v, want nil", err)
+					return
+				}
+
+				if errStr := err.Error(); !strings.Contains(errStr, tc.errSubstr) {
+					t.Errorf("Handshake() error = %v, want %v", errStr, tc.errSubstr)
+				}
+				return
 			}
 		})
 	}
