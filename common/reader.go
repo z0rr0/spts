@@ -14,7 +14,7 @@ import (
 type Reader struct {
 	rnd     *rand.Rand
 	errChan chan error
-	Count   atomic.Int64 // total read bytes
+	Count   atomic.Uint64 // total read bytes
 }
 
 // NewReader returns a new Reader that reads random generate
@@ -59,15 +59,15 @@ func (r *Reader) Read(p []byte) (int, error) {
 		return 0, err
 	}
 
-	r.Count.Add(int64(n))
+	r.Count.Add(uint64(n))
 	return n, nil
 }
 
 // Read reads generate from the reader until the context is canceled / timed out or EOF is reached.
 // It returns the number of bytes read and an error.
-func Read(ctx context.Context, reader io.Reader, bufSize int) (int, error) {
+func Read(ctx context.Context, reader io.Reader, bufSize int) (uint64, error) {
 	var (
-		total int
+		total uint64
 		n     int
 		err   error
 		buf   = make([]byte, bufSize)
@@ -88,12 +88,12 @@ func Read(ctx context.Context, reader io.Reader, bufSize int) (int, error) {
 
 			if err != nil {
 				if errors.Is(err, io.EOF) {
-					return total + n, nil
+					return total + uint64(n), nil
 				}
 				return 0, fmt.Errorf("read error: %w", err)
 			}
 
-			total += n
+			total += uint64(n)
 		}
 	}
 }

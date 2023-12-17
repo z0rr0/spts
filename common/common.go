@@ -5,9 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"net/url"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -48,6 +46,9 @@ const (
 var (
 	// ErrInvalidPort is returned when the port number is invalid.
 	ErrInvalidPort = errors.New("invalid port number")
+
+	// ErrIPAddress is returned when the remote address is not available.
+	ErrIPAddress = errors.New("failed to get remote address")
 )
 
 // Starter is a program start interface.
@@ -87,27 +88,8 @@ func Address(host string, port uint64) (string, error) {
 	return net.JoinHostPort(host, strconv.FormatUint(port, 10)), nil
 }
 
-// URL returns a valid client's URL.
-func URL(host string, port uint64) (string, error) {
-	scheme := "http"
-
-	if port == 443 {
-		scheme = "https"
-	} else {
-		address, err := Address(host, port)
-		if err != nil {
-			return "", err
-		}
-
-		host = address
-	}
-
-	u := url.URL{Host: host, Scheme: scheme}
-	return strings.TrimRight(u.String(), "/ "), nil
-}
-
 // ByteSize returns generate size as a string.
-func ByteSize(size int) string {
+func ByteSize(size uint64) string {
 	switch {
 	case size < KB:
 		return fmt.Sprintf("%d B", size)
@@ -120,8 +102,8 @@ func ByteSize(size int) string {
 	}
 }
 
-// Speed returns network speed as a string and
-func Speed(duration time.Duration, biyteScount int64, unit SpeedUnit) string {
+// Speed returns network speed as a string.
+func Speed(duration time.Duration, count uint64, unit SpeedUnit) string {
 	var (
 		speed float64
 		name  = "s"
@@ -139,7 +121,7 @@ func Speed(duration time.Duration, biyteScount int64, unit SpeedUnit) string {
 	}
 
 	if speed > 0 {
-		bitsCount := biyteScount * 8
+		bitsCount := count * 8
 		speed = float64(bitsCount) / speed
 	}
 

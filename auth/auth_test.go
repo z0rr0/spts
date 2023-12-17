@@ -2,12 +2,9 @@ package auth
 
 import (
 	"crypto/sha512"
-	"encoding/base64"
 	"fmt"
-	"net/http/httptest"
 	"os"
 	"testing"
-	"time"
 )
 
 func compareTokens(a, b map[uint16]*Token) error {
@@ -97,9 +94,9 @@ func TestLoadTokens(t *testing.T) {
 				}
 			}()
 
-			m, err := LoadTokens()
+			m, err := ServerTokens()
 			if (err != nil) != tc.withErr {
-				t.Fatalf("LoadTokens() error = %v, wantErr %v", err, tc.withErr)
+				t.Fatalf("ServerTokens() error = %v, wantErr %v", err, tc.withErr)
 			}
 
 			if err != nil {
@@ -107,7 +104,7 @@ func TestLoadTokens(t *testing.T) {
 			}
 
 			if err = compareTokens(m, tc.expected); err != nil {
-				t.Errorf("LoadTokens() = %v", err)
+				t.Errorf("ServerTokens() = %v", err)
 			}
 		})
 	}
@@ -218,10 +215,7 @@ func TestToken_Verify(t *testing.T) {
 		tc := testCases[i]
 
 		t.Run(tc.name, func(t *testing.T) {
-			payload := tc.token.String()
-			if len(payload) == 0 {
-				t.Fatal("zero token length")
-			}
+			data := tc.token.Sign()
 
 			if tc.touchSecret {
 				tc.token.Secret[0] = tc.token.Secret[0] << 1
@@ -232,16 +226,11 @@ func TestToken_Verify(t *testing.T) {
 			}
 
 			if tc.touchSalt {
-				tc.token.salt[0] = tc.token.salt[0] << 1
+				tc.token.salt[0] = ^tc.token.salt[0]
 			}
 
 			if tc.touchTimestamp {
 				tc.token.timestamp -= 1
-			}
-
-			data, err := base64.StdEncoding.DecodeString(payload)
-			if err != nil {
-				t.Fatalf("base64 decode: %v", err)
 			}
 
 			offset := len(data) - sha512.Size
@@ -252,101 +241,6 @@ func TestToken_Verify(t *testing.T) {
 
 			if ok != !withError {
 				t.Errorf("Verify() = %v, want %v", ok, !withError)
-			}
-		})
-	}
-}
-
-func TestAuthorize(t *testing.T) {
-	var ts = time.Now().Unix()
-
-	serverTokens := map[uint16]*Token{
-		1: {ClientID: 1, Secret: []byte{0x33, 0x12, 0xa1, 0x8b}},
-		2: {ClientID: 2, Secret: []byte{0x66, 0x6b, 0xf6, 0xa2}},
-	}
-	unknownClient := &Token{ClientID: 3, Secret: []byte{0x33, 0x12, 0xa1, 0x8b}}
-	failedTs := &Token{ClientID: 1, Secret: []byte{0x33, 0x12, 0xa1, 0x8b}, timestamp: ts - timestampLimit - 1}
-	failedSign := &Token{ClientID: 1, Secret: []byte{0x33, 0x12, 0xa1, 0x8c}}
-
-	testCases := []struct {
-		name         string
-		header       string
-		noHeader     bool
-		serverTokens map[uint16]*Token
-		clientID     uint16
-		withError    bool
-	}{
-		{name: "empty"},
-		{
-			name:         "no_header",
-			noHeader:     true,
-			serverTokens: serverTokens,
-			withError:    true,
-		},
-		{
-			name:         "valid",
-			header:       Prefix + serverTokens[1].String(),
-			serverTokens: serverTokens,
-			clientID:     1,
-		},
-		{
-			name:         "failed_header_prefix",
-			header:       "Basic " + serverTokens[1].String(),
-			serverTokens: serverTokens,
-			withError:    true,
-		},
-		{
-			name:         "failed_token_decode",
-			header:       Prefix + "invalid",
-			serverTokens: serverTokens,
-			withError:    true,
-		},
-		{
-			name:         "failed_token_length",
-			header:       Prefix + "dGVzdAo=", // "test" value
-			serverTokens: serverTokens,
-			withError:    true,
-		},
-		{
-			name:         "failed_unknown_client_id",
-			header:       Prefix + unknownClient.String(),
-			serverTokens: serverTokens,
-			withError:    true,
-		},
-		{
-			name:         "failed_timestamp",
-			header:       Prefix + failedTs.String(),
-			serverTokens: serverTokens,
-			withError:    true,
-		},
-		{
-			name:         "failed_signature",
-			header:       Prefix + failedSign.String(),
-			serverTokens: serverTokens,
-			withError:    true,
-		},
-	}
-
-	for i := range testCases {
-		tc := testCases[i]
-
-		t.Run(tc.name, func(t *testing.T) {
-			r := httptest.NewRequest("GET", "/", nil)
-			if !tc.noHeader {
-				r.Header.Set(AuthorizationHeader, tc.header)
-			}
-
-			clientID, err := Authorize(r, tc.serverTokens)
-			if (err != nil) != tc.withError {
-				t.Errorf("Authorize() error = %v, wantErr %v", err, tc.withError)
-			}
-
-			if err != nil {
-				return
-			}
-
-			if clientID != tc.clientID {
-				t.Errorf("Authorize clientID %d, want %d", clientID, tc.clientID)
 			}
 		})
 	}

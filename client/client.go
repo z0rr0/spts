@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net/http"
+	"net"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/z0rr0/spts/auth"
@@ -18,10 +19,8 @@ type ctxType string
 
 const ctxWriterKey ctxType = "writer"
 
-// ErrRequestFailed is returned when the request failed.
-var ErrRequestFailed = errors.New("request failed")
-
-type handlerType func(context.Context, *auth.Token, *http.Client) (int64, string, error)
+// ErrConnectionFailed is returned when the connection failed.
+var ErrConnectionFailed = errors.New("connection failed")
 
 // Client is a client data.
 type Client struct {
@@ -30,7 +29,7 @@ type Client struct {
 
 // New creates a new client.
 func New(params *common.Params) (*Client, error) {
-	address, err := common.URL(params.Host, params.Port)
+	address, err := common.Address(params.Host, params.Port)
 	if err != nil {
 		return nil, err
 	}
@@ -67,14 +66,7 @@ func (c *Client) Start(ctx context.Context) error {
 
 	slog.Debug("token", "client", token.ClientID)
 
-	tr := &http.Transport{
-		Proxy:           http.ProxyFromEnvironment,
-		WriteBufferSize: common.DefaultBufSize,
-		ReadBufferSize:  common.DefaultBufSize,
-	}
-	client := &http.Client{Transport: tr}
-
-	speed, ip, err := c.run(ctx, client, writer, token, c.download)
+	speed, ip, err := c.run(ctx, writer, token, true)
 	if err != nil {
 		return err
 	}
@@ -89,7 +81,7 @@ func (c *Client) Start(ctx context.Context) error {
 		return err
 	}
 
-	speed, _, err = c.run(ctx, client, writer, token, c.upload)
+	speed, _, err = c.run(ctx, writer, token, false)
 	if err != nil {
 		return err
 	}
@@ -99,14 +91,44 @@ func (c *Client) Start(ctx context.Context) error {
 }
 
 // Upload does a client POST request with body.
-func (c *Client) run(ctx context.Context, client *http.Client, w io.Writer, token *auth.Token, handler handlerType) (string, string, error) {
+func (c *Client) run(ctx context.Context, w io.Writer, token *auth.Token, download bool) (string, string, error) {
+	var (
+		d     net.Dialer
+		count uint64
+	)
+
 	if c.Params.Dot {
 		prg := newProgress(w, time.Second)
 		defer prg.done()
 	}
 
+	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
+	defer cancel()
+
+	conn, err := d.DialContext(ctx, "tcp", c.Address)
+	if err != nil {
+		return "", "", errors.Join(ErrConnectionFailed, fmt.Errorf("dial: %w", err))
+	}
+
+	defer func() {
+		if e := conn.Close(); e != nil {
+			slog.Error("connection", "close_error", e)
+		}
+	}()
+
+	client, ip, err := c.handshake(conn, token, download)
+	if err != nil {
+		return "", "", err
+	}
+
+	slog.Debug("connection", "address", conn.RemoteAddr().String(), "client", client, "download", download)
 	start := time.Now()
-	count, ip, err := handler(ctx, token, client)
+
+	if download {
+		count, err = c.download(ctx, conn, ip)
+	} else {
+		count, err = c.upload(ctx, conn, ip)
+	}
 
 	if err != nil {
 		return "", "", err
@@ -115,74 +137,70 @@ func (c *Client) run(ctx context.Context, client *http.Client, w io.Writer, toke
 	return common.Speed(time.Since(start), count, common.SpeedSeconds), ip, nil
 }
 
+// handshake does a client handshake, sends token and receives one back.
+func (c *Client) handshake(conn net.Conn, token *auth.Token, download bool) (uint16, string, error) {
+	remoteAddr, ok := conn.RemoteAddr().(*net.TCPAddr)
+	if !ok {
+		return 0, "", common.ErrIPAddress
+	}
+
+	ip := remoteAddr.IP
+
+	if token == nil {
+		return 0, ip.String(), nil // no token, no handshake
+	}
+
+	token.IP = ip
+	token.Download = download
+
+	if err := token.Handshake(conn); err != nil {
+		return 0, "", err
+	}
+
+	return token.ClientID, ip.String(), nil
+}
+
 // download gets data from server.
-func (c *Client) download(ctx context.Context, token *auth.Token, client *http.Client) (int64, string, error) {
-	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
-	defer cancel()
-
-	requestURL := c.Address + common.DownloadURL
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
-
+func (c *Client) download(ctx context.Context, conn net.Conn, ip string) (uint64, error) {
+	count, err := common.Read(ctx, conn, common.DefaultBufSize)
 	if err != nil {
-		return 0, "", errors.Join(ErrRequestFailed, fmt.Errorf("create: %w", err))
+		return 0, errors.Join(ErrConnectionFailed, fmt.Errorf("read: %w", err))
 	}
 
-	if sign := token.String(); sign != "" {
-		req.Header.Set(auth.AuthorizationHeader, auth.Prefix+sign)
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return 0, "", errors.Join(ErrRequestFailed, fmt.Errorf("do: %w", err))
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return 0, "", errors.Join(ErrRequestFailed, fmt.Errorf("status: %d", resp.StatusCode))
-	}
-
-	ip := resp.Header.Get(common.XRequestIPHeader)
-	count, err := common.Read(ctx, resp.Body, common.DefaultBufSize)
-	if err != nil {
-		return 0, "", errors.Join(ErrRequestFailed, fmt.Errorf("read: %w", err))
-	}
-
-	slog.Debug("reads", "ip", ip, "count", common.ByteSize(count))
-	return int64(count), ip, resp.Body.Close()
+	slog.Debug("connection", "action", "download", "ip", ip, "count", common.ByteSize(count))
+	return count, nil
 }
 
 // upload sends data to server.
-func (c *Client) upload(ctx context.Context, token *auth.Token, client *http.Client) (int64, string, error) {
-	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
-	defer cancel()
+func (c *Client) upload(ctx context.Context, conn net.Conn, ip string) (uint64, error) {
+	reader := common.NewReader(ctx)
+	_, err := io.Copy(conn, reader)
 
-	body := common.NewReader(ctx)
-	requestURL := c.Address + common.UploadURL
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, body)
-
-	if err != nil {
-		return 0, "", errors.Join(ErrRequestFailed, fmt.Errorf("create: %w", err))
+	if err = skipError(err); err != nil {
+		return 0, errors.Join(ErrConnectionFailed, fmt.Errorf("upload read/write: %w", err))
 	}
 
-	if sign := token.String(); sign != "" {
-		req.Header.Set(auth.AuthorizationHeader, auth.Prefix+sign)
+	count := reader.Count.Load()
+
+	slog.Debug("connection", "action", "upload", "ip", ip, "count", common.ByteSize(count))
+	return count, nil
+}
+
+func skipError(err error) error {
+	if err == nil {
+		return nil
 	}
 
-	resp, err := client.Do(req)
-	if err != nil {
-		return 0, "", errors.Join(ErrRequestFailed, fmt.Errorf("do: %w", err))
+	if errors.Is(err, io.EOF) {
+		return nil
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		return 0, "", errors.Join(ErrRequestFailed, fmt.Errorf("status: %d", resp.StatusCode))
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		if opErr.Err != nil && strings.Contains(opErr.Err.Error(), "broken pipe") {
+			return nil
+		}
 	}
 
-	if err = resp.Body.Close(); err != nil {
-		return 0, "", errors.Join(ErrRequestFailed, fmt.Errorf("close body: %w", err))
-	}
-
-	count := body.Count.Load()
-	ip := resp.Header.Get(common.XRequestIPHeader)
-	slog.Debug("writes", "ip", ip, "count", common.ByteSize(int(count)))
-
-	return count, ip, nil
+	return err
 }
