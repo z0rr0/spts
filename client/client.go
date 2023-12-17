@@ -29,6 +29,10 @@ type Client struct {
 
 // New creates a new client.
 func New(params *common.Params) (*Client, error) {
+	if params.Host == "" {
+		return nil, errors.New("host address is empty")
+	}
+
 	address, err := common.Address(params.Host, params.Port)
 	if err != nil {
 		return nil, err
@@ -42,21 +46,11 @@ func (c *Client) String() string {
 	return fmt.Sprintf("address: %s, timeout: %s", c.Address, c.Timeout)
 }
 
-func (c *Client) writer(ctx context.Context) io.Writer {
-	var writer io.Writer = os.Stdout
-
-	if ctxWriter, ok := ctx.Value(ctxWriterKey).(io.Writer); ok {
-		writer = ctxWriter
-	}
-
-	return writer
-}
-
 // Start does a client request.
 func (c *Client) Start(ctx context.Context) error {
 	var (
 		newLine = c.NewLine()
-		writer  = c.writer(ctx)
+		w       = writer(ctx)
 	)
 
 	token, err := auth.ClientToken()
@@ -66,27 +60,27 @@ func (c *Client) Start(ctx context.Context) error {
 
 	slog.Debug("token", "client", token.ClientID)
 
-	speed, ip, err := c.run(ctx, writer, token, true)
+	speed, ip, err := c.run(ctx, w, token, true)
 	if err != nil {
 		return err
 	}
 
-	_, err = fmt.Fprintf(writer, "%sIP address:     %s\n", newLine, ip)
+	_, err = fmt.Fprintf(w, "%sIP address:     %s\n", newLine, ip)
 	if err != nil {
 		return err
 	}
 
-	_, err = fmt.Fprintf(writer, "%sDownload speed: %s\n", newLine, speed)
+	_, err = fmt.Fprintf(w, "%sDownload speed: %s\n", newLine, speed)
 	if err != nil {
 		return err
 	}
 
-	speed, _, err = c.run(ctx, writer, token, false)
+	speed, _, err = c.run(ctx, w, token, false)
 	if err != nil {
 		return err
 	}
 
-	_, err = fmt.Fprintf(writer, "%sUpload speed:   %s\n", newLine, speed)
+	_, err = fmt.Fprintf(w, "%sUpload speed:   %s\n", newLine, speed)
 	return err
 }
 
@@ -184,6 +178,16 @@ func (c *Client) upload(ctx context.Context, conn net.Conn, ip string) (uint64, 
 
 	slog.Debug("connection", "action", "upload", "ip", ip, "count", common.ByteSize(count))
 	return count, nil
+}
+
+func writer(ctx context.Context) io.Writer {
+	var w io.Writer = os.Stdout
+
+	if ctxWriter, ok := ctx.Value(ctxWriterKey).(io.Writer); ok {
+		w = ctxWriter
+	}
+
+	return w
 }
 
 func skipError(err error) error {

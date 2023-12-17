@@ -17,6 +17,10 @@ import (
 	"github.com/z0rr0/spts/common"
 )
 
+const (
+	testEnv = "1:422090c90f7169b4"
+)
+
 func TestNew(t *testing.T) {
 	const timeout = 3 * time.Second
 
