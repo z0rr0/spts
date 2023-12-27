@@ -8,8 +8,8 @@ Speed Test Service.
 
 It's a simple client-server application for measuring network speed.
 
-It uses only HTTP protocol for communication between client and server.
-It works like `curl` commands (but without `data.log` file saving, random bytes are used instead):
+It uses only TCP protocol for communication between client and server.
+It works like `curl` commands (but without HTTP protocol and `data.log` file saving, random bytes are used instead):
 
 ```sh
 curl -o data.log -w "speed download: %{speed_download}\n" \
@@ -38,9 +38,9 @@ Usage of spts:
   -dot
         show dot progress output (for client mode)
   -host string
-        host (listen on for server, connect to for client) (default "localhost")
-  -port uint
-        port to listen on (in range 1..65535) (default 28082)
+        host to listen on for server mode or connect to for client mode (default "localhost")
+  -port value
+        port to listen on (integer in range 1..65535)
   -server
         run in server mode
   -timeout duration

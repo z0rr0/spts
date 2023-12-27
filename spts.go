@@ -33,11 +33,11 @@ func main() {
 		debug      bool
 		version    bool
 		dot        bool
-		host       string
-		port       uint16 = 28082
 
-		timeout = 3 * time.Second
-		clients = 1
+		port    uint16 = 28082
+		host           = "localhost"
+		timeout        = 3 * time.Second
+		clients        = 1
 	)
 
 	defer func() {
@@ -48,12 +48,12 @@ func main() {
 
 	flag.BoolVar(&serverMode, "server", serverMode, "run in server mode")
 	flag.DurationVar(&timeout, "timeout", timeout, "timeout for requests (half for client mode)")
-	flag.StringVar(&host, "host", host, "host to listen on (for server mode) or connect to (required for client mode)")
+	flag.StringVar(&host, "host", host, "host to listen on for server mode or connect to for client mode")
 	flag.BoolVar(&version, "version", version, "print version and exit")
 	flag.BoolVar(&debug, "debug", debug, "enable debug mode")
 	flag.BoolVar(&dot, "dot", dot, "show dot progress output (for client mode)")
 	flag.IntVar(&clients, "clients", clients, "max clients (for server mode)")
-	flag.Func("port", "port to listen on"+fmt.Sprintf(" (in range 1..%d)", common.MaxPortNumber), func(s string) error {
+	flag.Func("port", "port to listen on"+fmt.Sprintf(" (integer in range 1..%d)", common.MaxPortNumber), func(s string) error {
 		if p, err := common.ParsePort(s); err != nil {
 			return err
 		} else {
