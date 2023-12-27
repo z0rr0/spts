@@ -152,12 +152,12 @@ func SkipError(err error) error {
 	}
 
 	errMsg := opErr.Error()
-	if strings.Contains(errMsg, "connection reset by peer") {
-		return nil
-	}
+	ignoredErrors := []string{"connection reset by peer", "broken pipe", "i/o timeout"}
 
-	if strings.Contains(errMsg, "broken pipe") {
-		return nil
+	for _, e := range ignoredErrors {
+		if strings.Contains(errMsg, e) {
+			return nil
+		}
 	}
 
 	return err
