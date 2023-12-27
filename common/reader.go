@@ -3,10 +3,8 @@ package common
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"math/rand"
-	"sync/atomic"
 	"time"
 )
 
@@ -14,7 +12,6 @@ import (
 type Reader struct {
 	rnd     *rand.Rand
 	errChan chan error
-	Count   atomic.Uint64 // total read bytes
 }
 
 // NewReader returns a new Reader that reads random generate
@@ -26,6 +23,8 @@ func NewReader(ctx context.Context) *Reader {
 	}
 
 	go func() {
+		defer close(r.errChan)
+
 		for {
 			select {
 			case <-ctx.Done():
@@ -34,8 +33,6 @@ func NewReader(ctx context.Context) *Reader {
 				} else {
 					r.errChan <- err
 				}
-
-				close(r.errChan)
 				return
 			default:
 				r.errChan <- nil
@@ -48,52 +45,9 @@ func NewReader(ctx context.Context) *Reader {
 
 // Read implements the io.Reader interface.
 func (r *Reader) Read(p []byte) (int, error) {
-	err := <-r.errChan
-
-	if err != nil {
+	if err := <-r.errChan; err != nil {
 		return 0, err
 	}
 
-	n, err := r.rnd.Read(p)
-	if err != nil {
-		return 0, err
-	}
-
-	r.Count.Add(uint64(n))
-	return n, nil
-}
-
-// Read reads generate from the reader until the context is canceled / timed out or EOF is reached.
-// It returns the number of bytes read and an error.
-func Read(ctx context.Context, reader io.Reader, bufSize int) (uint64, error) {
-	var (
-		total uint64
-		n     int
-		err   error
-		buf   = make([]byte, bufSize)
-	)
-
-	for {
-		select {
-		case <-ctx.Done():
-			err = ctx.Err()
-
-			if errors.Is(err, context.DeadlineExceeded) {
-				return total, nil
-			}
-
-			return 0, fmt.Errorf("context read error: %w", err)
-		default:
-			n, err = reader.Read(buf[:])
-
-			if err != nil {
-				if errors.Is(err, io.EOF) {
-					return total + uint64(n), nil
-				}
-				return 0, fmt.Errorf("read error: %w", err)
-			}
-
-			total += uint64(n)
-		}
-	}
+	return r.rnd.Read(p)
 }

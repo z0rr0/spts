@@ -34,7 +34,7 @@ func main() {
 		version    bool
 		dot        bool
 		host       string
-		port       uint64 = 28082
+		port       uint16 = 28082
 
 		timeout = 3 * time.Second
 		clients = 1
@@ -47,13 +47,20 @@ func main() {
 	}()
 
 	flag.BoolVar(&serverMode, "server", serverMode, "run in server mode")
-	flag.Uint64Var(&port, "port", port, "port to listen on"+fmt.Sprintf(" (in range 1..%d)", common.MaxPortNumber))
 	flag.DurationVar(&timeout, "timeout", timeout, "timeout for requests (half for client mode)")
 	flag.StringVar(&host, "host", host, "host to listen on (for server mode) or connect to (required for client mode)")
 	flag.BoolVar(&version, "version", version, "print version and exit")
 	flag.BoolVar(&debug, "debug", debug, "enable debug mode")
 	flag.BoolVar(&dot, "dot", dot, "show dot progress output (for client mode)")
 	flag.IntVar(&clients, "clients", clients, "max clients (for server mode)")
+	flag.Func("port", "port to listen on"+fmt.Sprintf(" (in range 1..%d)", common.MaxPortNumber), func(s string) error {
+		if p, err := common.ParsePort(s); err != nil {
+			return err
+		} else {
+			port = p
+		}
+		return nil
+	})
 
 	flag.Parse()
 	if version {

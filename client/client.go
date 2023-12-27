@@ -7,8 +7,6 @@ import (
 	"io"
 	"log/slog"
 	"net"
-	"os"
-	"strings"
 	"time"
 
 	"github.com/z0rr0/spts/auth"
@@ -17,40 +15,39 @@ import (
 
 type ctxType string
 
-const ctxWriterKey ctxType = "writer"
+const ctxWriterKey ctxType = "progressWriter"
 
 // ErrConnectionFailed is returned when the connection failed.
 var ErrConnectionFailed = errors.New("connection failed")
 
 // Client is a client data.
 type Client struct {
-	common.ServiceBase
+	common.Params
 }
 
 // New creates a new client.
 func New(params *common.Params) (*Client, error) {
+	if params.Port < 1 {
+		return nil, errors.Join(common.ErrInvalidPort, errors.New("port number must be greater than 0"))
+	}
+
 	if params.Host == "" {
 		return nil, errors.New("host address is empty")
 	}
 
-	address, err := common.Address(params.Host, params.Port)
-	if err != nil {
-		return nil, err
-	}
-
-	return &Client{ServiceBase: common.ServiceBase{Address: address, Params: params}}, nil
+	return &Client{Params: *params}, nil
 }
 
 // String implements Stringer interface.
 func (c *Client) String() string {
-	return fmt.Sprintf("address: %s, timeout: %s", c.Address, c.Timeout)
+	return fmt.Sprintf("address: %s, timeout: %s", c.Address(), c.Timeout)
 }
 
 // Start does a client request.
 func (c *Client) Start(ctx context.Context) error {
 	var (
-		newLine = c.NewLine()
-		w       = writer(ctx)
+		newLine  = c.NewLine()
+		pgWriter = progressWriter(ctx)
 	)
 
 	token, err := auth.ClientToken()
@@ -60,46 +57,46 @@ func (c *Client) Start(ctx context.Context) error {
 
 	slog.Debug("token", "client", token.ClientID)
 
-	speed, ip, err := c.run(ctx, w, token, true)
+	speed, ip, err := c.run(ctx, pgWriter, token, true)
 	if err != nil {
 		return err
 	}
 
-	_, err = fmt.Fprintf(w, "%sIP address:     %s\n", newLine, ip)
+	_, err = fmt.Fprintf(pgWriter, "%sIP address:     %s\n", newLine, ip)
 	if err != nil {
 		return err
 	}
 
-	_, err = fmt.Fprintf(w, "%sDownload speed: %s\n", newLine, speed)
+	_, err = fmt.Fprintf(pgWriter, "%sDownload speed: %s\n", newLine, speed)
 	if err != nil {
 		return err
 	}
 
-	speed, _, err = c.run(ctx, w, token, false)
+	speed, _, err = c.run(ctx, pgWriter, token, false)
 	if err != nil {
 		return err
 	}
 
-	_, err = fmt.Fprintf(w, "%sUpload speed:   %s\n", newLine, speed)
+	_, err = fmt.Fprintf(pgWriter, "%sUpload speed:   %s\n", newLine, speed)
 	return err
 }
 
 // Upload does a client POST request with body.
-func (c *Client) run(ctx context.Context, w io.Writer, token *auth.Token, download bool) (string, string, error) {
+func (c *Client) run(ctx context.Context, pgWriter io.Writer, token *auth.Token, download bool) (string, string, error) {
 	var (
-		d     net.Dialer
-		count uint64
+		dialer net.Dialer
+		count  uint64
 	)
 
 	if c.Params.Dot {
-		prg := newProgress(w, time.Second)
+		prg := newProgress(pgWriter, time.Second)
 		defer prg.done()
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
 	defer cancel()
 
-	conn, err := d.DialContext(ctx, "tcp", c.Address)
+	conn, err := dialer.DialContext(ctx, "tcp", c.Address())
 	if err != nil {
 		return "", "", errors.Join(ErrConnectionFailed, fmt.Errorf("dial: %w", err))
 	}
@@ -139,7 +136,6 @@ func (c *Client) handshake(conn net.Conn, token *auth.Token, download bool) (uin
 	}
 
 	ip := remoteAddr.IP
-
 	if token == nil {
 		return 0, ip.String(), nil // no token, no handshake
 	}
@@ -155,56 +151,31 @@ func (c *Client) handshake(conn net.Conn, token *auth.Token, download bool) (uin
 }
 
 // download gets data from server.
-func (c *Client) download(ctx context.Context, conn net.Conn, ip string) (uint64, error) {
-	count, err := common.Read(ctx, conn, common.DefaultBufSize)
-	if err != nil {
-		return 0, errors.Join(ErrConnectionFailed, fmt.Errorf("read: %w", err))
+func (c *Client) download(ctx context.Context, conn io.Reader, ip string) (uint64, error) {
+	w := common.NewWriter(ctx)
+	n, err := io.Copy(w, conn) // successful Copy returns err == nil, not err == io.EOF
+
+	if err != nil && !errors.Is(err, common.ErrWriterTimeout) {
+		return 0, errors.Join(ErrConnectionFailed, fmt.Errorf("download read/write: %w", err))
 	}
 
+	count := uint64(n)
 	slog.Debug("connection", "action", "download", "ip", ip, "count", common.ByteSize(count))
+
 	return count, nil
 }
 
 // upload sends data to server.
-func (c *Client) upload(ctx context.Context, conn net.Conn, ip string) (uint64, error) {
-	reader := common.NewReader(ctx)
-	_, err := io.Copy(conn, reader)
+func (c *Client) upload(ctx context.Context, conn io.Writer, ip string) (uint64, error) {
+	r := common.NewReader(ctx)
+	n, err := io.Copy(conn, r)
 
-	if err = skipError(err); err != nil {
+	if err = common.SkipError(err); err != nil {
 		return 0, errors.Join(ErrConnectionFailed, fmt.Errorf("upload read/write: %w", err))
 	}
 
-	count := reader.Count.Load()
-
+	count := uint64(n)
 	slog.Debug("connection", "action", "upload", "ip", ip, "count", common.ByteSize(count))
+
 	return count, nil
-}
-
-func writer(ctx context.Context) io.Writer {
-	var w io.Writer = os.Stdout
-
-	if ctxWriter, ok := ctx.Value(ctxWriterKey).(io.Writer); ok {
-		w = ctxWriter
-	}
-
-	return w
-}
-
-func skipError(err error) error {
-	if err == nil {
-		return nil
-	}
-
-	if errors.Is(err, io.EOF) {
-		return nil
-	}
-
-	var opErr *net.OpError
-	if errors.As(err, &opErr) {
-		if opErr.Err != nil && strings.Contains(opErr.Err.Error(), "broken pipe") {
-			return nil
-		}
-	}
-
-	return err
 }

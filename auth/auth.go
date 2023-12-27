@@ -34,8 +34,11 @@ const (
 )
 
 var (
-	// ErrorUnauthorized is an error for unauthorized request.
-	ErrorUnauthorized = errors.New("unauthorized")
+	// ErrUnauthorized is an error for unauthorized request.
+	ErrUnauthorized = errors.New("unauthorized")
+
+	// ErrAuthRequired is an error for required authorization.
+	ErrAuthRequired = errors.New("auth required")
 
 	// ErrTokenSignature is an error for invalid token signature.
 	ErrTokenSignature = errors.New("invalid token signature")
@@ -68,7 +71,7 @@ func NewToken(pair string) (*Token, error) {
 func ServerTokens() (map[uint16]*Token, error) {
 	value := strings.Trim(os.Getenv(ServerEnv), ", ")
 	if value == "" {
-		return nil, nil
+		return nil, ErrAuthRequired
 	}
 
 	pairs := strings.Split(value, ",")
@@ -91,7 +94,7 @@ func ClientToken() (*Token, error) {
 	value := strings.Trim(os.Getenv(ClientEnv), " ")
 
 	if value == "" {
-		return &Token{}, nil
+		return nil, ErrAuthRequired
 	}
 
 	return NewToken(value)
@@ -99,19 +102,19 @@ func ClientToken() (*Token, error) {
 
 // Verify is called by servers, it checks authorization header and returns new token if `r` data is valid.
 func Verify(r io.Reader, tokens map[uint16]*Token) (*Token, error) {
-	if len(tokens) == 0 {
-		return nil, nil // no tokens, authorization is not required
+	if r == nil {
+		return nil, errors.Join(ErrUnauthorized, errors.New("nil reader"))
 	}
 
 	header := make([]byte, lenToken)
 	n, err := r.Read(header)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to read header data: %w", err)
+		return nil, errors.Join(ErrUnauthorized, fmt.Errorf("failed to read header data: %w", err))
 	}
 
 	if n != lenToken {
-		return nil, errors.New("invalid token length")
+		return nil, errors.Join(ErrUnauthorized, errors.New("invalid token length"))
 	}
 
 	return verifyHeader(header, tokens)
@@ -127,12 +130,12 @@ func verifyHeader(header []byte, serverTokens map[uint16]*Token) (*Token, error)
 	clientIDBytes := header[lenAction:endClient]
 	err := binary.Read(bytes.NewReader(clientIDBytes), binary.BigEndian, &clientID)
 	if err != nil {
-		return nil, errors.Join(ErrorUnauthorized, fmt.Errorf("clientID parse: %w", err))
+		return nil, errors.Join(ErrUnauthorized, fmt.Errorf("clientID parse: %w", err))
 	}
 
 	serverToken, ok := serverTokens[clientID]
 	if !ok {
-		return nil, errors.Join(ErrorUnauthorized, fmt.Errorf("unknown clientID: %d", clientID))
+		return nil, errors.Join(ErrUnauthorized, fmt.Errorf("unknown clientID: %d", clientID))
 	}
 
 	timestamp, err := verifyTimestamp(header[endSalt:endTime])
@@ -168,13 +171,13 @@ func verifyTimestamp(value []byte) (int64, error) {
 
 	err := binary.Read(bytes.NewReader(value), binary.BigEndian, &timestamp)
 	if err != nil {
-		return 0, errors.Join(ErrorUnauthorized, fmt.Errorf("timestamp parse: %w", err))
+		return 0, errors.Join(ErrUnauthorized, fmt.Errorf("timestamp parse: %w", err))
 	}
 
 	timeDiff := time.Now().Unix() - timestamp
 	if timeDiff > timestampLimit || timeDiff < -timestampLimit {
 		return 0, errors.Join(
-			ErrorUnauthorized,
+			ErrUnauthorized,
 			fmt.Errorf("not synchronized time, diff=%d, but abs limit=%d", timeDiff, timestampLimit),
 		)
 	}

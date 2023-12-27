@@ -4,16 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"strconv"
+	"strings"
 	"time"
 )
 
 // Data size constants.
 const (
-	KB = 1024
-	MB = 1024 * KB
-	GB = 1024 * MB
+	KB float64 = 1024
+	MB         = 1024 * KB
+	GB         = 1024 * MB
 )
 
 // SpeedUnit is a speed unit type.
@@ -26,21 +28,9 @@ const (
 	SpeedSeconds
 )
 
-// Server's URLs
-const (
-	UploadURL   = "/upload"
-	DownloadURL = "/download"
-)
-
 const (
 	// MaxPortNumber is a maximum port number.
 	MaxPortNumber uint64 = 65535
-
-	// DefaultBufSize is a default buffer size for generate transfer.
-	DefaultBufSize = 32 * KB
-
-	// XRequestIPHeader is a header name for client's IP address.
-	XRequestIPHeader = "X-Request-IP"
 )
 
 var (
@@ -49,6 +39,9 @@ var (
 
 	// ErrIPAddress is returned when the remote address is not available.
 	ErrIPAddress = errors.New("failed to get remote address")
+
+	// ErrStop is returned when the program must be stopped. It's not an error, only a signal.
+	ErrStop = errors.New("stop")
 )
 
 // Starter is a program start interface.
@@ -56,10 +49,24 @@ type Starter interface {
 	Start(ctx context.Context) error
 }
 
+// ParsePort parses a port number.
+func ParsePort(value string) (uint16, error) {
+	port, err := strconv.ParseUint(value, 10, 16)
+	if err != nil {
+		return 0, fmt.Errorf("parse port: %w", err)
+	}
+
+	if port < 1 || port > MaxPortNumber {
+		return 0, fmt.Errorf("port number must be in range [1, %d]", MaxPortNumber)
+	}
+
+	return uint16(port), nil
+}
+
 // Params is a program parameters.
 type Params struct {
 	Host    string
-	Port    uint64
+	Port    uint16
 	Timeout time.Duration
 	Clients int
 	Dot     bool
@@ -73,32 +80,24 @@ func (p *Params) NewLine() string {
 	return ""
 }
 
-// ServiceBase is a base client/server struct.
-type ServiceBase struct {
-	Address string
-	*Params
-}
-
-// Address returns a valid address.
-func Address(host string, port uint64) (string, error) {
-	if port < 1 || port > MaxPortNumber {
-		return "", errors.Join(ErrInvalidPort, fmt.Errorf("port must be between 1 and %d", MaxPortNumber))
-	}
-
-	return net.JoinHostPort(host, strconv.FormatUint(port, 10)), nil
+// Address returns a network address.
+func (p *Params) Address() string {
+	return net.JoinHostPort(p.Host, strconv.FormatUint(uint64(p.Port), 10))
 }
 
 // ByteSize returns generate size as a string.
 func ByteSize(size uint64) string {
+	var floatSize = float64(size)
+
 	switch {
-	case size < KB:
-		return fmt.Sprintf("%d B", size)
-	case size < MB:
-		return fmt.Sprintf("%.2f KB", float64(size)/KB)
-	case size < GB:
-		return fmt.Sprintf("%.2f MB", float64(size)/MB)
+	case floatSize < KB:
+		return fmt.Sprintf("%.0f B", floatSize)
+	case floatSize < MB:
+		return fmt.Sprintf("%.2f KB", floatSize/KB)
+	case floatSize < GB:
+		return fmt.Sprintf("%.2f MB", floatSize/MB)
 	default:
-		return fmt.Sprintf("%.2f GB", float64(size)/GB)
+		return fmt.Sprintf("%.2f GB", floatSize/GB)
 	}
 }
 
@@ -135,4 +134,31 @@ func Speed(duration time.Duration, count uint64, unit SpeedUnit) string {
 	default:
 		return fmt.Sprintf("%.2f GBits/%s", speed/GB, name)
 	}
+}
+
+// SkipError skips some errors or returns original one.
+func SkipError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
+		return nil
+	}
+
+	var opErr *net.OpError
+	if !errors.As(err, &opErr) {
+		return err
+	}
+
+	errMsg := opErr.Error()
+	if strings.Contains(errMsg, "connection reset by peer") {
+		return nil
+	}
+
+	if strings.Contains(errMsg, "broken pipe") {
+		return nil
+	}
+
+	return err
 }

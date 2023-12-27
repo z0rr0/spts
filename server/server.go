@@ -17,7 +17,7 @@ import (
 
 const (
 	acceptTimeout = 2 * time.Second
-	acceptAddTime = 50 * time.Millisecond
+	acceptAddTime = 100 * time.Millisecond
 )
 
 var (
@@ -28,32 +28,26 @@ var (
 
 // Server is a server data.
 type Server struct {
-	common.ServiceBase
+	common.Params
 	addr net.TCPAddr
 }
 
 // New creates a new server.
 func New(params *common.Params) (*Server, error) {
-	address, err := common.Address(params.Host, params.Port)
-	if err != nil {
-		return nil, err
-	}
-
 	if params.Clients < 1 {
 		return nil, errors.New("allow clients number must be greater than 0")
 	}
 
 	addr := net.TCPAddr{IP: net.ParseIP(params.Host), Port: int(params.Port)}
-	return &Server{ServiceBase: common.ServiceBase{Address: address, Params: params}, addr: addr}, nil
+	return &Server{Params: *params, addr: addr}, nil
 }
 
 // Start starts the server.
 func (s *Server) Start(ctx context.Context) error {
-	slog.Info("server starting", "PID", os.Getpid(), "address", s.Address, "timeout", s.Timeout)
+	slog.Info("server starting", "PID", os.Getpid(), "address", s.Address(), "timeout", s.Timeout)
 	defer slog.Info("server stopped")
 
-	err := s.ListenAndServe(ctx)
-	if err != nil {
+	if err := s.ListenAndServe(ctx); err != nil {
 		return fmt.Errorf("listen and serve: %w", err)
 	}
 
@@ -87,8 +81,9 @@ func (s *Server) connAccept(ctx context.Context, listener *net.TCPListener, sema
 
 	if err != nil {
 		if errors.As(err, &opErr) && opErr.Timeout() {
+			// error can be from context or listener
 			if err = ctx.Err(); err != nil {
-				return nil, fmt.Errorf("context error: %w", err)
+				return nil, fmt.Errorf("listener accept context error: %w", err)
 			}
 			return nil, ErrAcceptTimeout
 		}
@@ -126,8 +121,12 @@ func (s *Server) connChan(ctx context.Context, listener *net.TCPListener, semaph
 			case errors.Is(err, ErrSkipConnection):
 				slog.Info("listener", "skip_error", err)
 			case err != nil:
-				// after timeout and context cancellation
-				slog.Error("listener", "error", err)
+				// after timeout, context cancellation
+				if errors.Is(err, context.Canceled) {
+					slog.Info("listener", "context", err)
+				} else {
+					slog.Error("listener", "error", err)
+				}
 				close(ch)
 				return
 			default:
@@ -164,8 +163,8 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	defer close(semaphore)
 
 	for conn := range s.connChan(ctx, listener, semaphore) {
+		wg.Add(1)
 		go func(c net.Conn) {
-			wg.Add(1)
 			ctxConn, cancel := context.WithTimeout(ctx, s.Timeout)
 
 			if e := handleConnection(ctxConn, c, tokens); e != nil {
@@ -201,12 +200,14 @@ func handleConnection(ctx context.Context, conn net.Conn, tokens map[uint16]*aut
 	}
 	token.IP = remoteAddr.IP
 
+	// write handshake reply,
+	// auth.Verify already updated temporary token's parts
 	header := token.Sign()
 	if _, err = conn.Write(header); err != nil {
 		return fmt.Errorf("write header: %w", err)
 	}
 
-	slog.Info("connection", "address", remoteAddr.String(), "client", token.ClientID, "download", token.Download)
+	slog.Info("connection", "address", remoteAddr.String(), "client", token.ClientID, "action", token.Action())
 
 	if token.Download {
 		err = download(ctx, conn)
@@ -218,39 +219,25 @@ func handleConnection(ctx context.Context, conn net.Conn, tokens map[uint16]*aut
 }
 
 func download(ctx context.Context, w io.Writer) error {
-	var count uint64
+	r := common.NewReader(ctx)
+	n, err := io.Copy(w, r)
 
-	reader := common.NewReader(ctx)
-	buffer := make([]byte, common.DefaultBufSize)
-
-	for {
-		n, err := reader.Read(buffer)
-
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			return errors.Join(ErrDataWriteRead, fmt.Errorf("download read: %w", err))
-		}
-
-		_, err = w.Write(buffer[:n])
-		if err != nil {
-			return errors.Join(ErrDataWriteRead, fmt.Errorf("download write: %w", err))
-		}
-
-		count += uint64(n)
+	if err = common.SkipError(err); err != nil {
+		return errors.Join(ErrDataWriteRead, fmt.Errorf("download copy: %w", err))
 	}
 
-	slog.Info("writes", "count", common.ByteSize(count))
+	slog.Info("writes", "count", common.ByteSize(uint64(n)))
 	return nil
 }
 
 func upload(ctx context.Context, r io.Reader) error {
-	count, err := common.Read(ctx, r, common.DefaultBufSize)
-	if err != nil {
-		return errors.Join(ErrDataWriteRead, fmt.Errorf("upload read: %w", err))
+	w := common.NewWriter(ctx)
+	n, err := io.Copy(w, r)
+
+	if err != nil && !errors.Is(err, common.ErrWriterTimeout) {
+		return errors.Join(ErrDataWriteRead, fmt.Errorf("upload copy: %w", err))
 	}
 
-	slog.Info("reads", "count", common.ByteSize(count))
+	slog.Info("reads", "count", common.ByteSize(uint64(n)))
 	return nil
 }

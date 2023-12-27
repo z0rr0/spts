@@ -6,8 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
-	"net/http/httptest"
+	"net"
 	"os"
 	"strings"
 	"testing"
@@ -17,30 +16,31 @@ import (
 	"github.com/z0rr0/spts/common"
 )
 
-const (
-	testEnv = "1:422090c90f7169b4"
-)
+const serverTimeout = 100 * time.Millisecond
 
 func TestNew(t *testing.T) {
-	const timeout = 3 * time.Second
-
 	testCases := []struct {
 		name      string
 		host      string
-		port      uint64
+		port      uint16
+		clients   int
 		withError bool
 	}{
-		{name: "valid", host: "localhost", port: 28081},
-		{name: "invalid_port", host: "localhost", withError: true},
-		{name: "failed_port", host: "localhost", port: 100_000, withError: true},
-		{name: "empty_host", port: 28081},
+		{name: "valid", host: "localhost", port: 28081, clients: 1},
+		{name: "empty_host", port: 28081, clients: 2},
+		{name: "not_clients", port: 28081, withError: true},
 	}
 
 	for i := range testCases {
 		tc := testCases[i]
 
 		t.Run(tc.name, func(t *testing.T) {
-			params := &common.Params{Host: tc.host, Port: tc.port, Timeout: timeout, Clients: 1}
+			params := &common.Params{
+				Host:    tc.host,
+				Port:    tc.port,
+				Timeout: serverTimeout,
+				Clients: tc.clients,
+			}
 			s, err := New(params)
 
 			if (err != nil) != tc.withError {
@@ -54,194 +54,118 @@ func TestNew(t *testing.T) {
 	}
 }
 
-func TestDownload(t *testing.T) {
-	params := &common.Params{Host: "localhost", Port: 28082, Timeout: 20 * time.Millisecond, Clients: 1}
-	s, err := New(params)
-
-	if err != nil {
-		t.Fatalf("failed to create server: %v", err)
-	}
-
-	req := httptest.NewRequest("GET", "http://localhsot/download", nil)
-	w := httptest.NewRecorder()
-
-	if err = s.download(w, req); err != nil {
-		t.Errorf("failed to download: %v", err)
-	}
+type testClient struct {
+	id    uint16
+	addr  *net.TCPAddr
+	token *auth.Token
 }
 
-func TestUpload(t *testing.T) {
-	params := &common.Params{Host: "localhost", Port: 28083, Timeout: 20 * time.Millisecond, Clients: 1}
-	s, err := New(params)
-
+func (c *testClient) connect(download bool) (net.Conn, error) {
+	conn, err := net.Dial(c.addr.Network(), c.addr.String())
 	if err != nil {
-		t.Fatalf("failed to create server: %v", err)
+		return nil, fmt.Errorf("dial: %w", err)
 	}
 
-	body := strings.NewReader("test")
-	req := httptest.NewRequest("POST", "http://localhsot/upload", body)
-	w := httptest.NewRecorder()
+	remoteAddr := conn.RemoteAddr().(*net.TCPAddr)
+	c.token.IP = remoteAddr.IP
+	c.token.Download = download
 
-	if err = s.upload(w, req); err != nil {
-		t.Errorf("failed to upload: %v", err)
+	if err = c.token.Handshake(conn); err != nil {
+		return nil, fmt.Errorf("handshake: %w", err)
 	}
+
+	return conn, nil
 }
 
-func TestServer_Start(t *testing.T) {
-	params := &common.Params{Host: "localhost", Port: 28084, Timeout: 20 * time.Millisecond, Clients: 1}
-	s, err := New(params)
-
+func (c *testClient) do() error {
+	// upload
+	conn, err := c.connect(false)
 	if err != nil {
-		t.Fatalf("failed to create server: %v", err)
+		return fmt.Errorf("connect: %w", err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	r := common.NewReader(context.Background())
+	_, err = io.Copy(conn, r)
+
+	if err = common.SkipError(err); err != nil {
+		return fmt.Errorf("upload read/write: %w", err)
+	}
+
+	if err = conn.Close(); err != nil {
+		return fmt.Errorf("close upload: %w", err)
+	}
+
+	// download
+	if conn, err = c.connect(true); err != nil {
+		return fmt.Errorf("connect: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), serverTimeout/2)
 	defer cancel()
 
-	go func() {
-		time.Sleep(50 * time.Millisecond)
-		cancel()
-	}()
+	w := common.NewWriter(ctx)
+	_, err = io.Copy(w, conn)
 
-	if err = s.Start(ctx); err != nil {
-		t.Errorf("failed to start: %v", err)
+	if err != nil && !errors.Is(err, common.ErrWriterTimeout) {
+		return fmt.Errorf("download read/write: %w", err)
 	}
+
+	return conn.Close()
 }
 
-func TestServer_Handle(t *testing.T) {
-	handlers := map[string]handlerType{
-		common.UploadURL: func(w http.ResponseWriter, r *http.Request) error {
-			var buffer [32]byte
+func tokensToString(tokens map[uint16]*auth.Token) string {
+	items := make([]string, 0, len(tokens))
 
-			n, err := r.Body.Read(buffer[:])
-			if err != nil {
-				if !errors.Is(err, io.EOF) {
-					return fmt.Errorf("failed to read body data: %w", err)
-				}
-			}
-
-			if n == 0 {
-				return errors.New("uploaded zero bytes")
-			}
-
-			if err = r.Body.Close(); err != nil {
-				return fmt.Errorf("failed to close body: %w", err)
-			}
-
-			w.WriteHeader(http.StatusOK)
-			return nil
-		},
-		common.DownloadURL: func(w http.ResponseWriter, r *http.Request) error {
-			w.WriteHeader(http.StatusOK)
-			_, err := w.Write([]byte{0, 1})
-
-			if err != nil {
-				return fmt.Errorf("failed to write data: %w", err)
-			}
-			return nil
-		},
+	for clientID, token := range tokens {
+		items = append(items, fmt.Sprintf("%d:%s", clientID, hex.EncodeToString(token.Secret)))
 	}
 
-	semaphore := make(chan struct{}, 1)
-	server := httptest.NewServer(http.HandlerFunc(rootHandler(semaphore, nil, handlers)))
-
-	defer server.Close()
-	client := server.Client()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "GET", server.URL+common.DownloadURL, nil)
-	if err != nil {
-		t.Fatalf("failed to create download request: %v", err)
-	}
-
-	_, err = client.Do(req)
-	if err != nil {
-		t.Fatalf("failed to download: %v", err)
-	}
-
-	req, err = http.NewRequestWithContext(ctx, "POST", server.URL+common.UploadURL, strings.NewReader("test"))
-	if err != nil {
-		t.Fatalf("failed to create upload request: %v", err)
-	}
-
-	_, err = client.Do(req)
-	if err != nil {
-		t.Fatalf("failed to upload: %v", err)
-	}
+	return strings.Join(items, ",")
 }
 
-func TestServer_Token(t *testing.T) {
-	serverTokens := map[uint16]*auth.Token{
-		1: {ClientID: 1, Secret: []byte{0x33, 0x12, 0xa1, 0x8b}},
-		2: {ClientID: 2, Secret: []byte{0x66, 0x6b, 0xf6, 0xa2}},
-	}
+func TestStart(t *testing.T) {
+	var (
+		params = &common.Params{Host: "127.0.0.1", Port: 28082, Timeout: serverTimeout, Clients: 1}
+		tokens = map[uint16]*auth.Token{
+			1: {ClientID: 1, Secret: []byte{0x33, 0x12, 0xa1, 0x8b}},
+			2: {ClientID: 2, Secret: []byte{0x66, 0x6b, 0xf6, 0xa2}},
+		}
+		stop = make(chan struct{})
+	)
 
-	token1 := "1:" + hex.EncodeToString(serverTokens[1].Secret)
-	token2 := "2:" + hex.EncodeToString(serverTokens[2].Secret)
-
-	clientToken := &auth.Token{ClientID: 1, Secret: []byte{0x33, 0x12, 0xa1, 0x8b}} // client #1
-	err := os.Setenv(auth.ServerEnv, token1+","+token2)
-
-	if err != nil {
+	if err := os.Setenv(auth.ServerEnv, tokensToString(tokens)); err != nil {
 		t.Fatalf("failed to set environment variable: %v", err)
 	}
 
 	defer func() {
-		if e := os.Unsetenv(auth.ServerEnv); e != nil {
-			t.Errorf("failed to unset environment variable: %v", e)
+		if err := os.Unsetenv(auth.ServerEnv); err != nil {
+			t.Errorf("failed to unset environment variable: %v", err)
 		}
 	}()
 
-	params := &common.Params{Host: "localhost", Port: 28085, Timeout: 10 * time.Millisecond, Clients: 1}
-	s, err := New(params)
-
+	server, err := New(params)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	client := &http.Client{}
-
-	go func() {
-		defer cancel()
-		time.Sleep(50 * time.Millisecond) // wait for server start
-
-		req, e := http.NewRequest("GET", "http://localhost:28085/download", nil)
-		if e != nil {
-			t.Errorf("failed to create download request: %v", e)
-			return
-		}
-
-		resp, e := client.Do(req)
-		if e != nil {
-			t.Errorf("failed to download: %v", e)
-			return
-		}
-
-		if resp.StatusCode != http.StatusUnauthorized {
-			t.Errorf("want %d, got %d", http.StatusUnauthorized, resp.StatusCode)
-		}
-
-		req, e = http.NewRequest("GET", "http://localhost:28085/download", nil)
-		if e != nil {
-			t.Errorf("failed to create download request: %v", e)
-			return
-		}
-
-		req.Header.Add(auth.AuthorizationHeader, auth.Prefix+clientToken.String())
-		if resp, e = client.Do(req); e != nil {
-			t.Errorf("failed to download: %v", e)
-			return
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			t.Errorf("want %d, got %d", http.StatusUnauthorized, resp.StatusCode)
-		}
+	defer func() {
+		cancel()
+		<-stop
 	}()
 
-	if err = s.Start(ctx); err != nil {
-		t.Errorf("failed to start: %v", err)
+	// start server as separate goroutine
+	go func() {
+		if e := server.Start(ctx); e != nil {
+			t.Errorf("server start: %v", e)
+		}
+		close(stop)
+	}()
+
+	client := &testClient{id: 2, addr: &server.addr, token: tokens[2]}
+
+	time.Sleep(2 * time.Second)
+	if err = client.do(); err != nil {
+		t.Errorf("client do: %v", err)
 	}
 }

@@ -1,8 +1,10 @@
 package client
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"os"
 	"time"
 )
 
@@ -40,4 +42,14 @@ func newProgress(w io.Writer, d time.Duration) *progress {
 func (p *progress) done() {
 	close(p.stop)
 	<-p.wait
+}
+
+func progressWriter(ctx context.Context) io.Writer {
+	var w io.Writer = os.Stdout
+
+	if ctxWriter, ok := ctx.Value(ctxWriterKey).(io.Writer); ok {
+		w = ctxWriter
+	}
+
+	return w
 }

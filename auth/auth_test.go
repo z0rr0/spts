@@ -41,9 +41,9 @@ func TestLoadTokens(t *testing.T) {
 		withErr  bool
 	}{
 		{
-			name:     "empty",
-			tokens:   "",
-			expected: nil,
+			name:    "empty",
+			tokens:  "",
+			withErr: true,
 		},
 		{
 			name:     "valid",
@@ -206,7 +206,8 @@ func TestVerify(t *testing.T) {
 		errSubstr string
 	}{
 		{
-			name: "empty_tokens",
+			name:      "empty_tokens",
+			errSubstr: "nil reader",
 		},
 		{
 			name: "empty_reader",
@@ -504,8 +505,8 @@ func TestClientToken(t *testing.T) {
 		withErr bool
 	}{
 		{
-			name:  "empty",
-			token: &Token{},
+			name:    "empty",
+			withErr: true,
 		},
 		{
 			name:  "valid",

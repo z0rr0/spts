@@ -140,3 +140,12 @@ func (t *Token) Handshake(rw io.ReadWriter) error {
 func (t *Token) Equal(x *Token) bool {
 	return t.ClientID == x.ClientID && bytes.Equal(t.Secret, x.Secret)
 }
+
+// Action returns token's action.
+func (t *Token) Action() string {
+	if t.Download {
+		return "download"
+	}
+
+	return "upload"
+}
