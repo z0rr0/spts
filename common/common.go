@@ -138,7 +138,7 @@ func Speed(duration time.Duration, count uint64, unit SpeedUnit) string {
 
 // SkipError skips some errors or returns original one.
 func SkipError(err error) error {
-	var ignoredErrors = [2]string{"connection reset by peer", "broken pipe"}
+	var ignoredErrors = [3]string{"connection reset by peer", "broken pipe", "i/o timeout"}
 
 	if err == nil {
 		return nil
