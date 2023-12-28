@@ -84,8 +84,9 @@ func (c *Client) Start(ctx context.Context) error {
 // Upload does a client POST request with body.
 func (c *Client) run(ctx context.Context, pgWriter io.Writer, token *auth.Token, download bool) (string, string, error) {
 	var (
-		dialer net.Dialer
-		count  uint64
+		dialer  net.Dialer
+		count   uint64
+		timeout = c.Timeout
 	)
 
 	if c.Params.Dot {
@@ -93,7 +94,11 @@ func (c *Client) run(ctx context.Context, pgWriter io.Writer, token *auth.Token,
 		defer prg.done()
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
+	if download {
+		timeout *= common.TimeoutMultiplier
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	conn, err := dialer.DialContext(ctx, "tcp", c.Address())
@@ -112,19 +117,23 @@ func (c *Client) run(ctx context.Context, pgWriter io.Writer, token *auth.Token,
 		return "", "", err
 	}
 
-	slog.Debug("connection", "address", conn.RemoteAddr().String(), "client", client, "download", download)
+	slog.Debug(
+		"connection",
+		"address", conn.RemoteAddr().String(), "client", client, "download", download, "timeout", timeout,
+	)
 	start := time.Now()
 
 	if download {
-		count, err = c.download(ctx, conn, ip)
+		count, err = c.download(ctx, conn)
 	} else {
-		count, err = c.upload(ctx, conn, ip)
+		count, err = c.upload(ctx, conn)
 	}
 
 	if err != nil {
 		return "", "", err
 	}
 
+	slog.Debug("connection", "download", download, "ip", ip, "count", common.ByteSize(count))
 	return common.Speed(time.Since(start), count, common.SpeedSeconds), ip, nil
 }
 
@@ -151,7 +160,7 @@ func (c *Client) handshake(conn net.Conn, token *auth.Token, download bool) (uin
 }
 
 // download gets data from server.
-func (c *Client) download(ctx context.Context, conn io.Reader, ip string) (uint64, error) {
+func (c *Client) download(ctx context.Context, conn io.Reader) (uint64, error) {
 	w := common.NewWriter(ctx)
 	n, err := io.Copy(w, conn) // successful Copy returns err == nil, not err == io.EOF
 
@@ -159,14 +168,11 @@ func (c *Client) download(ctx context.Context, conn io.Reader, ip string) (uint6
 		return 0, errors.Join(ErrConnectionFailed, fmt.Errorf("download read/write: %w", err))
 	}
 
-	count := uint64(n)
-	slog.Debug("connection", "action", "download", "ip", ip, "count", common.ByteSize(count))
-
-	return count, nil
+	return uint64(n), nil
 }
 
 // upload sends data to server.
-func (c *Client) upload(ctx context.Context, conn io.Writer, ip string) (uint64, error) {
+func (c *Client) upload(ctx context.Context, conn io.Writer) (uint64, error) {
 	r := common.NewReader(ctx)
 	n, err := io.Copy(conn, r)
 
@@ -174,8 +180,5 @@ func (c *Client) upload(ctx context.Context, conn io.Writer, ip string) (uint64,
 		return 0, errors.Join(ErrConnectionFailed, fmt.Errorf("upload read/write: %w", err))
 	}
 
-	count := uint64(n)
-	slog.Debug("connection", "action", "upload", "ip", ip, "count", common.ByteSize(count))
-
-	return count, nil
+	return uint64(n), nil
 }

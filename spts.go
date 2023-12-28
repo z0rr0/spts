@@ -114,7 +114,6 @@ func start(ctx context.Context, serverMode bool, params *common.Params) error {
 	if serverMode {
 		s, err = server.New(params)
 	} else {
-		params.Timeout *= 2
 		s, err = client.New(params)
 	}
 

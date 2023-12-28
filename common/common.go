@@ -31,6 +31,9 @@ const (
 const (
 	// MaxPortNumber is a maximum port number.
 	MaxPortNumber uint64 = 65535
+
+	// TimeoutMultiplier is a multiplier for timeout to read all data.
+	TimeoutMultiplier time.Duration = 2
 )
 
 var (
@@ -39,9 +42,6 @@ var (
 
 	// ErrIPAddress is returned when the remote address is not available.
 	ErrIPAddress = errors.New("failed to get remote address")
-
-	// ErrStop is returned when the program must be stopped. It's not an error, only a signal.
-	ErrStop = errors.New("stop")
 )
 
 // Starter is a program start interface.
@@ -138,6 +138,8 @@ func Speed(duration time.Duration, count uint64, unit SpeedUnit) string {
 
 // SkipError skips some errors or returns original one.
 func SkipError(err error) error {
+	var ignoredErrors = [2]string{"connection reset by peer", "broken pipe"}
+
 	if err == nil {
 		return nil
 	}
@@ -152,10 +154,8 @@ func SkipError(err error) error {
 	}
 
 	errMsg := opErr.Error()
-	ignoredErrors := []string{"connection reset by peer", "broken pipe", "i/o timeout"}
-
-	for _, e := range ignoredErrors {
-		if strings.Contains(errMsg, e) {
+	for _, ignoredErr := range ignoredErrors {
+		if strings.Contains(errMsg, ignoredErr) {
 			return nil
 		}
 	}

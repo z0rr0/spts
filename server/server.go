@@ -91,7 +91,7 @@ func (s *Server) connAccept(ctx context.Context, listener *net.TCPListener, sema
 		return nil, errors.Join(ErrSkipConnection, fmt.Errorf("listener accept: %w", err))
 	}
 
-	if err = conn.SetDeadline(time.Now().Add(addDuration)); err != nil {
+	if err = connSetDeadline(conn, addDuration, common.TimeoutMultiplier); err != nil {
 		err = errors.Join(ErrSkipConnection, fmt.Errorf("connection deadline: %w", err))
 
 		// connection was successfully accepted, but deadline failed, so close it and stop handling
@@ -218,6 +218,8 @@ func handleConnection(ctx context.Context, conn net.Conn, tokens map[uint16]*aut
 	return err
 }
 
+// download writes data to connection.
+// It uses short context timeout.
 func download(ctx context.Context, w io.Writer) error {
 	r := common.NewReader(ctx)
 	n, err := io.Copy(w, r)
@@ -230,6 +232,8 @@ func download(ctx context.Context, w io.Writer) error {
 	return nil
 }
 
+// upload reads data from connection.
+// It's needed longer context timeout due to network latency.
 func upload(ctx context.Context, r io.Reader) error {
 	w := common.NewWriter(ctx)
 	n, err := io.Copy(w, r)
@@ -240,4 +244,14 @@ func upload(ctx context.Context, r io.Reader) error {
 
 	slog.Info("reads", "count", common.ByteSize(uint64(n)))
 	return nil
+}
+
+// connSetDeadline sets a deadline for a connection.
+func connSetDeadline(conn net.Conn, timeout time.Duration, multiplier time.Duration) error {
+	if err := conn.SetWriteDeadline(time.Now().Add(timeout)); err != nil {
+		return err
+	}
+
+	timeout *= multiplier
+	return conn.SetReadDeadline(time.Now().Add(timeout))
 }

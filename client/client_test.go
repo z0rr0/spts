@@ -172,7 +172,7 @@ func TestClient_Download(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 
-	count, err := client.download(ctx, conn, addr.IP.String())
+	count, err := client.download(ctx, conn)
 	if err != nil {
 		t.Errorf("failed download: %v", err)
 	}
@@ -226,7 +226,7 @@ func TestClient_Upload(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), testAccTimeout)
 	defer cancel()
 
-	count, err := client.upload(ctx, conn, addr.IP.String())
+	count, err := client.upload(ctx, conn)
 	if err != nil {
 		t.Errorf("failed upload: %v", err)
 	}
