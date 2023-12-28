@@ -47,7 +47,7 @@ func main() {
 	}()
 
 	flag.BoolVar(&serverMode, "server", serverMode, "run in server mode")
-	flag.DurationVar(&timeout, "timeout", timeout, "timeout for requests (half for client mode)")
+	flag.DurationVar(&timeout, "timeout", timeout, "timeout for requests")
 	flag.StringVar(&host, "host", host, "host to listen on for server mode or connect to for client mode")
 	flag.BoolVar(&version, "version", version, "print version and exit")
 	flag.BoolVar(&debug, "debug", debug, "enable debug mode")

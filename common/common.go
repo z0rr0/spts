@@ -33,7 +33,7 @@ const (
 	MaxPortNumber uint64 = 65535
 
 	// TimeoutMultiplier is a multiplier for timeout to read all data.
-	TimeoutMultiplier time.Duration = 2
+	TimeoutMultiplier time.Duration = 5
 )
 
 var (

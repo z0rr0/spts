@@ -44,7 +44,7 @@ Usage of spts:
   -server
         run in server mode
   -timeout duration
-        timeout for requests (half for client mode) (default 3s)
+        timeout for requests (default 3s)
   -version
         print version and exit
 ```
