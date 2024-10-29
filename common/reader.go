@@ -6,6 +6,8 @@ import (
 	"io"
 	"math/rand"
 	"time"
+
+	"github.com/z0rr0/spts/auth"
 )
 
 // Reader is a reader that reads random generate.
@@ -16,7 +18,7 @@ type Reader struct {
 
 // NewReader returns a new Reader that reads random generate
 // with the given buffer size until the context is canceled or timed out.
-func NewReader(ctx context.Context) *Reader {
+func NewReader(ctx context.Context, token *auth.Token) *Reader {
 	r := &Reader{
 		rnd:     rand.New(rand.NewSource(time.Now().UnixNano())), //#nosec G404 - this data is not security sensitive
 		errChan: make(chan error),

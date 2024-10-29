@@ -10,12 +10,9 @@ import (
 	"time"
 
 	"github.com/z0rr0/spts/auth"
+	"github.com/z0rr0/spts/auth/token"
 	"github.com/z0rr0/spts/common"
 )
-
-type ctxType string
-
-const ctxWriterKey ctxType = "progressWriter"
 
 // ErrConnectionFailed is returned when the connection failed.
 var ErrConnectionFailed = errors.New("connection failed")
@@ -50,14 +47,14 @@ func (c *Client) Start(ctx context.Context) error {
 		pgWriter = progressWriter(ctx)
 	)
 
-	token, err := auth.ClientToken()
+	t, err := auth.ClientToken()
 	if err != nil {
 		return err
 	}
+	slog.Debug("token", "client", t.ClientID)
 
-	slog.Debug("token", "client", token.ClientID)
-
-	speed, ip, err := c.run(ctx, pgWriter, token, true)
+	t.Download = true
+	speed, ip, err := c.run(ctx, pgWriter, t)
 	if err != nil {
 		return err
 	}
@@ -72,7 +69,8 @@ func (c *Client) Start(ctx context.Context) error {
 		return err
 	}
 
-	speed, _, err = c.run(ctx, pgWriter, token, false)
+	t.Download = false
+	speed, _, err = c.run(ctx, pgWriter, t)
 	if err != nil {
 		return err
 	}
@@ -81,8 +79,8 @@ func (c *Client) Start(ctx context.Context) error {
 	return err
 }
 
-// Upload does a client POST request with body.
-func (c *Client) run(ctx context.Context, pgWriter io.Writer, token *auth.Token, download bool) (string, string, error) {
+// Upload does a client requests.
+func (c *Client) run(ctx context.Context, pgWriter io.Writer, t *token.Token) (string, string, error) {
 	var (
 		dialer  net.Dialer
 		count   uint64
@@ -92,10 +90,6 @@ func (c *Client) run(ctx context.Context, pgWriter io.Writer, token *auth.Token,
 	if c.Params.Dot {
 		prg := newProgress(pgWriter, time.Second)
 		defer prg.done()
-	}
-
-	if download {
-		timeout *= common.TimeoutMultiplier
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, timeout)
@@ -112,18 +106,17 @@ func (c *Client) run(ctx context.Context, pgWriter io.Writer, token *auth.Token,
 		}
 	}()
 
-	client, ip, err := c.handshake(conn, token, download)
-	if err != nil {
+	if err = c.handshake(conn, t); err != nil {
 		return "", "", err
 	}
 
 	slog.Debug(
 		"connection",
-		"address", conn.RemoteAddr().String(), "client", client, "download", download, "timeout", timeout,
+		"address", conn.RemoteAddr().String(), "client", t.ClientID, "action", t.Action(), "timeout", timeout,
 	)
 	start := time.Now()
 
-	if download {
+	if t.Download {
 		count, err = c.download(ctx, conn)
 	} else {
 		count, err = c.upload(ctx, conn)
@@ -133,30 +126,26 @@ func (c *Client) run(ctx context.Context, pgWriter io.Writer, token *auth.Token,
 		return "", "", err
 	}
 
-	slog.Debug("connection", "download", download, "ip", ip, "count", common.ByteSize(count))
+	ip := t.IP.String()
+	slog.Debug("connection", "action", t.Action(), "ip", ip, "count", common.ByteSize(count))
+
 	return common.Speed(time.Since(start), count, common.SpeedSeconds), ip, nil
 }
 
 // handshake does a client handshake, sends token and receives one back.
-func (c *Client) handshake(conn net.Conn, token *auth.Token, download bool) (uint16, string, error) {
+func (c *Client) handshake(conn net.Conn, t *token.Token) error {
 	remoteAddr, ok := conn.RemoteAddr().(*net.TCPAddr)
 	if !ok {
-		return 0, "", common.ErrIPAddress
+		return common.ErrIPAddress
 	}
 
 	ip := remoteAddr.IP
-	if token == nil {
-		return 0, ip.String(), nil // no token, no handshake
+	if t == nil {
+		return nil // no token, no handshake
 	}
 
-	token.IP = ip
-	token.Download = download
-
-	if err := token.Handshake(conn); err != nil {
-		return 0, "", err
-	}
-
-	return token.ClientID, ip.String(), nil
+	t.IP = ip
+	return t.Handshake(conn)
 }
 
 // download gets data from server.

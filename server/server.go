@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/z0rr0/spts/auth"
+	"github.com/z0rr0/spts/auth/token"
 	"github.com/z0rr0/spts/common"
 )
 
@@ -26,10 +27,16 @@ var (
 	ErrDataWriteRead  = errors.New("data write/read")
 )
 
-// Server is a server data.
+// Server is a server struct.
 type Server struct {
 	common.Params
-	addr net.TCPAddr
+	addr   net.TCPAddr
+	tokens map[uint16]*token.Token
+}
+
+type acceptedConn struct {
+	conn net.Conn
+	err  error
 }
 
 // New creates a new server.
@@ -54,98 +61,15 @@ func (s *Server) Start(ctx context.Context) error {
 	return nil
 }
 
-func (s *Server) connAccept(ctx context.Context, listener *net.TCPListener, semaphore chan struct{}) (net.Conn, error) {
-	var (
-		err           error
-		conn          *net.TCPConn
-		opErr         *net.OpError
-		freeSemaphore bool
-		addDuration   = s.Timeout + acceptAddTime
-	)
-
-	defer func() {
-		if freeSemaphore {
-			<-semaphore
-		}
-	}()
-
-	// set limit for AcceptTCP timeout,
-	// it's only to prevent blocking and periodically check context cancellation
-	if err = listener.SetDeadline(time.Now().Add(acceptTimeout)); err != nil {
-		return nil, errors.Join(ErrSkipConnection, fmt.Errorf("listener deadline: %w", err))
-	}
-
-	semaphore <- struct{}{}
-	freeSemaphore = true
-	conn, err = listener.AcceptTCP()
-
-	if err != nil {
-		if errors.As(err, &opErr) && opErr.Timeout() {
-			// error can be from context or listener
-			if err = ctx.Err(); err != nil {
-				return nil, fmt.Errorf("listener accept context error: %w", err)
-			}
-			return nil, ErrAcceptTimeout
-		}
-
-		return nil, errors.Join(ErrSkipConnection, fmt.Errorf("listener accept: %w", err))
-	}
-
-	if err = connSetDeadline(conn, addDuration, common.TimeoutMultiplier); err != nil {
-		err = errors.Join(ErrSkipConnection, fmt.Errorf("connection deadline: %w", err))
-
-		// connection was successfully accepted, but deadline failed, so close it and stop handling
-		if e := conn.Close(); e != nil {
-			err = errors.Join(err, fmt.Errorf("connection close: %w", e))
-		}
-
-		return nil, err
-	}
-
-	// no errors, don't need to release semaphore
-	// it will be released in handleConnection
-	freeSemaphore = false
-	return conn, nil
-}
-
-func (s *Server) connChan(ctx context.Context, listener *net.TCPListener, semaphore chan struct{}) chan net.Conn {
-	ch := make(chan net.Conn)
-
-	go func() {
-		for {
-			conn, err := s.connAccept(ctx, listener, semaphore)
-
-			switch {
-			case errors.Is(err, ErrAcceptTimeout):
-				slog.Debug("listener", "accept_timeout", err, "timeout", acceptTimeout)
-			case errors.Is(err, ErrSkipConnection):
-				slog.Info("listener", "skip_error", err)
-			case err != nil:
-				// after timeout, context cancellation
-				if errors.Is(err, context.Canceled) {
-					slog.Info("listener", "context", err)
-				} else {
-					slog.Error("listener", "error", err)
-				}
-				close(ch)
-				return
-			default:
-				slog.Info("listener", "accepted", conn.RemoteAddr())
-				ch <- conn
-			}
-		}
-	}()
-
-	return ch
-}
-
+// ListenAndServe listens and serves incoming connections.
 func (s *Server) ListenAndServe(ctx context.Context) error {
-	tokens, err := auth.ServerTokens()
+	tokens, err := auth.ServerTokens(s.Chunk)
 	if err != nil {
 		return err
 	}
 
-	slog.Info("tokens", "count", len(tokens))
+	s.tokens = tokens
+	slog.Info("tokens", "count", len(s.tokens))
 
 	listener, err := net.ListenTCP("tcp", &s.addr)
 	if err != nil {
@@ -162,26 +86,112 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	semaphore := make(chan struct{}, s.Clients) // limit concurrent requests
 	defer close(semaphore)
 
-	for conn := range s.connChan(ctx, listener, semaphore) {
+	for ac := range s.connChan(ctx, listener, semaphore) {
 		wg.Add(1)
-		go func(c net.Conn) {
-			ctxConn, cancel := context.WithTimeout(ctx, s.Timeout)
-
-			if e := handleConnection(ctxConn, c, tokens); e != nil {
-				slog.Error("connection", "handling_error", e)
-			}
-
-			cancel()
-			<-semaphore // release semaphore for next request
-			wg.Done()
-		}(conn)
+		go s.handleConnection(ctx, &wg, ac, semaphore)
 	}
 
+	<-semaphore
 	wg.Wait()
+
 	return nil
 }
 
-func handleConnection(ctx context.Context, conn net.Conn, tokens map[uint16]*auth.Token) error {
+func (s *Server) connChan(ctx context.Context, listener *net.TCPListener, semaphore chan struct{}) chan acceptedConn {
+	ch := make(chan acceptedConn)
+
+	go func() {
+		defer close(ch)
+
+		for {
+			ac := s.connAccept(ctx, listener, semaphore)
+
+			switch {
+			case errors.Is(ac.err, ErrAcceptTimeout):
+				slog.Debug("listener", "accept_timeout", ac.err, "timeout", acceptTimeout)
+			case errors.Is(ac.err, ErrSkipConnection):
+				slog.Info("listener", "skip_error", ac.err)
+			case ac.err != nil:
+				// after timeout, context cancellation
+				if errors.Is(ac.err, context.Canceled) {
+					slog.Info("listener", "context", ac.err)
+				} else {
+					slog.Error("listener", "error", ac.err)
+				}
+				return
+			default:
+				slog.Info("listener", "accepted", ac.conn.RemoteAddr())
+			}
+
+			ch <- ac
+		}
+	}()
+
+	return ch
+}
+
+func (s *Server) connAccept(ctx context.Context, listener *net.TCPListener, semaphore chan struct{}) acceptedConn {
+	var (
+		conn        *net.TCPConn
+		opErr       *net.OpError
+		err         error
+		addDuration = s.Timeout + acceptAddTime
+	)
+	// set limit for AcceptTCP timeout,
+	// it's only to prevent blocking and periodically check context cancellation
+	if err = listener.SetDeadline(time.Now().Add(acceptTimeout)); err != nil {
+		return acceptedConn{err: errors.Join(ErrSkipConnection, fmt.Errorf("listener deadline: %w", err))}
+	}
+
+	semaphore <- struct{}{}
+	conn, err = listener.AcceptTCP() // blocking call, wait for new client's connection
+
+	if err != nil {
+		if errors.As(err, &opErr) && opErr.Timeout() {
+			// error can be from context or listener
+			if err = ctx.Err(); err != nil {
+				return acceptedConn{err: fmt.Errorf("listener accept context error: %w", err)}
+			}
+			return acceptedConn{err: ErrAcceptTimeout}
+		}
+
+		return acceptedConn{err: errors.Join(ErrSkipConnection, fmt.Errorf("listener accept: %w", err))}
+	}
+
+	if err = connSetDeadline(conn, addDuration, common.TimeoutMultiplier); err != nil {
+		err = errors.Join(ErrSkipConnection, fmt.Errorf("connection deadline: %w", err))
+
+		// connection was successfully accepted, but deadline failed, so close it and stop handling
+		if e := conn.Close(); e != nil {
+			err = errors.Join(err, fmt.Errorf("connection close: %w", e))
+		}
+
+		return acceptedConn{err: err}
+	}
+
+	return acceptedConn{conn: conn}
+}
+
+func (s *Server) handleConnection(ctx context.Context, wg *sync.WaitGroup, c acceptedConn, semaphore chan struct{}) {
+	defer func() {
+		<-semaphore
+		wg.Done()
+	}()
+
+	if c.err != nil {
+		slog.Error("connection", "accept_error", c.err)
+		return
+	}
+
+	ctxConn, cancel := context.WithTimeout(ctx, s.Timeout)
+	if e := handleConnection(ctxConn, c.conn, s.tokens); e != nil {
+		slog.Error("connection", "handling_error", e)
+	}
+
+	cancel()
+}
+
+func handleConnection(ctx context.Context, conn net.Conn, tokens map[uint16]*token.Token) error {
 	defer func() {
 		if e := conn.Close(); e != nil {
 			slog.Error("connection", "close_error", e)
@@ -189,27 +199,32 @@ func handleConnection(ctx context.Context, conn net.Conn, tokens map[uint16]*aut
 	}()
 
 	// read handshake
-	token, err := auth.Verify(conn, tokens)
+	t, err := token.Verify(conn, tokens)
 	if err != nil {
 		return err
 	}
 
 	remoteAddr, ok := conn.RemoteAddr().(*net.TCPAddr)
+
 	if !ok {
 		return common.ErrIPAddress
 	}
-	token.IP = remoteAddr.IP
+	t.IP = remoteAddr.IP
 
 	// write handshake reply,
 	// auth.Verify already updated temporary token's parts
-	header := token.Sign()
+	header, err := t.Sign()
+	if err != nil {
+		return err // unexpected error
+	}
+
 	if _, err = conn.Write(header); err != nil {
 		return fmt.Errorf("write header: %w", err)
 	}
 
-	slog.Info("connection", "address", remoteAddr.String(), "client", token.ClientID, "action", token.Action())
+	slog.Info("connection", "address", remoteAddr.String(), "client", t.ClientID, "action", t.Action())
 
-	if token.Download {
+	if t.Download {
 		err = download(ctx, conn)
 	} else {
 		err = upload(ctx, conn)

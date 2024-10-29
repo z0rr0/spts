@@ -8,6 +8,10 @@ import (
 	"time"
 )
 
+type ctxType string
+
+const ctxWriterKey ctxType = "progressWriter"
+
 // progress is a progress indicator.
 type progress struct {
 	stop chan struct{}

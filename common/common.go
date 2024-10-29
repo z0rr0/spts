@@ -70,6 +70,12 @@ type Params struct {
 	Timeout time.Duration
 	Clients int
 	Dot     bool
+	Chunk   uint32
+}
+
+// ServerMode returns true if the server mode is enabled.
+func (p *Params) ServerMode() bool {
+	return p.Timeout > 0
 }
 
 // NewLine returns a new line string by dot flag.

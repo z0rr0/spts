@@ -1,0 +1,31 @@
+@startuml download
+Title Download
+
+actor Client #Blue
+participant Server
+
+autonumber 0
+Client <-[#red]-> Server: common secret
+Client -[#blue]> Server: handshake
+
+group recursion transfer
+Client <[#blue]- Server: chunk size
+Client <- Server: download data chunk
+Client -> Server: confirm
+end
+
+note over Server
+expired timeout
+end note
+
+Client <[#green]- Server: zero chunk size
+
+note over Server
+close connection
+end note
+
+note over Client
+calculate
+network speed
+end note
+@enduml
