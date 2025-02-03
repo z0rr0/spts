@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/z0rr0/spts/auth/token"
+	"github.com/z0rr0/spts/auth0/token"
 	"github.com/z0rr0/spts/client"
 	"github.com/z0rr0/spts/common"
 	"github.com/z0rr0/spts/server"

@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/z0rr0/spts/auth"
+	"github.com/z0rr0/spts/auth0"
 	"github.com/z0rr0/spts/common"
 )
 
@@ -261,14 +261,14 @@ func TestClient_String(t *testing.T) {
 }
 
 func TestClient_Handshake(t *testing.T) {
-	var tokens = map[uint16]*auth.Token{
+	var tokens = map[uint16]*auth0.Token{
 		1: {ClientID: 1, Secret: []byte{0x33, 0x12, 0xa1, 0x8b}},
 		2: {ClientID: 2, Secret: []byte{0x66, 0x6b, 0xf6, 0xa2}},
 	}
 
 	srv, err := createServer(t, func(conn net.Conn) error {
 		// read handshake
-		token, err := auth.Verify(conn, tokens)
+		token, err := auth0.Verify(conn, tokens)
 		if err != nil {
 			return err
 		}
@@ -325,7 +325,7 @@ func TestClient_Handshake(t *testing.T) {
 		t.Fatalf("failed to connect: %v", err)
 	}
 
-	token := &auth.Token{ClientID: 3, Secret: []byte{0x33, 0x12, 0xa1, 0x8b}}
+	token := &auth0.Token{ClientID: 3, Secret: []byte{0x33, 0x12, 0xa1, 0x8b}}
 	_, _, err = client.handshake(conn, token, true)
 
 	if err == nil {
@@ -340,7 +340,7 @@ func TestClient_Handshake(t *testing.T) {
 func TestClient_Start(t *testing.T) {
 	var (
 		stopped = make(chan struct{})
-		tokens  = map[uint16]*auth.Token{
+		tokens  = map[uint16]*auth0.Token{
 			1: {ClientID: 1, Secret: []byte{0x33, 0x12, 0xa1, 0x8b}},
 			2: {ClientID: 2, Secret: []byte{0x66, 0x6b, 0xf6, 0xa2}},
 		}
@@ -348,7 +348,7 @@ func TestClient_Start(t *testing.T) {
 
 	srv, err := createServer(t, func(conn net.Conn) error {
 		// read handshake
-		token, err := auth.Verify(conn, tokens)
+		token, err := auth0.Verify(conn, tokens)
 		if err != nil {
 			return err
 		}
@@ -416,12 +416,12 @@ func TestClient_Start(t *testing.T) {
 		t.Fatalf("failed to connect: %v", err)
 	}
 
-	if err = os.Setenv(auth.ClientEnv, testEnv); err != nil {
+	if err = os.Setenv(auth0.ClientEnv, testEnv); err != nil {
 		t.Fatalf("failed to set environment variable: %v", err)
 	}
 
 	defer func() {
-		if err = os.Unsetenv(auth.ClientEnv); err != nil {
+		if err = os.Unsetenv(auth0.ClientEnv); err != nil {
 			t.Errorf("failed to unset environment variable: %v", err)
 		}
 	}()

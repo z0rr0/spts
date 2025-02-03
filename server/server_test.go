@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/z0rr0/spts/auth"
+	"github.com/z0rr0/spts/auth0"
 	"github.com/z0rr0/spts/common"
 )
 
@@ -57,7 +57,7 @@ func TestNew(t *testing.T) {
 type testClient struct {
 	id    uint16
 	addr  *net.TCPAddr
-	token *auth.Token
+	token *auth0.Token
 }
 
 func (c *testClient) connect(download bool) (net.Conn, error) {
@@ -113,7 +113,7 @@ func (c *testClient) do() error {
 	return conn.Close()
 }
 
-func tokensToString(tokens map[uint16]*auth.Token) string {
+func tokensToString(tokens map[uint16]*auth0.Token) string {
 	items := make([]string, 0, len(tokens))
 
 	for clientID, token := range tokens {
@@ -126,19 +126,19 @@ func tokensToString(tokens map[uint16]*auth.Token) string {
 func TestStart(t *testing.T) {
 	var (
 		params = &common.Params{Host: "127.0.0.1", Port: 28082, Timeout: serverTimeout, Clients: 1}
-		tokens = map[uint16]*auth.Token{
+		tokens = map[uint16]*auth0.Token{
 			1: {ClientID: 1, Secret: []byte{0x33, 0x12, 0xa1, 0x8b}},
 			2: {ClientID: 2, Secret: []byte{0x66, 0x6b, 0xf6, 0xa2}},
 		}
 		stop = make(chan struct{})
 	)
 
-	if err := os.Setenv(auth.ServerEnv, tokensToString(tokens)); err != nil {
+	if err := os.Setenv(auth0.ServerEnv, tokensToString(tokens)); err != nil {
 		t.Fatalf("failed to set environment variable: %v", err)
 	}
 
 	defer func() {
-		if err := os.Unsetenv(auth.ServerEnv); err != nil {
+		if err := os.Unsetenv(auth0.ServerEnv); err != nil {
 			t.Errorf("failed to unset environment variable: %v", err)
 		}
 	}()

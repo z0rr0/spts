@@ -1,4 +1,4 @@
-package auth
+package auth0
 
 import (
 	"fmt"
@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/z0rr0/spts/auth/token"
+	"github.com/z0rr0/spts/auth0/token"
 )
 
 func compare(a, b map[uint16]*token.Token) error {

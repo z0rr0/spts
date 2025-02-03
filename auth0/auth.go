@@ -1,6 +1,6 @@
-// Package auth provides authorization methods.
+// Package auth0 provides authorization methods.
 
-package auth
+package auth0
 
 import (
 	"encoding/hex"
@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/z0rr0/spts/auth/token"
+	"github.com/z0rr0/spts/auth0/token"
 )
 
 const (
@@ -26,7 +26,7 @@ const (
 
 var (
 	// ErrAuthRequired is an error for required authorization.
-	ErrAuthRequired = errors.New("auth required")
+	ErrAuthRequired = errors.New("auth0 required")
 )
 
 // NewToken returns a new token built from string "clientID:secret".

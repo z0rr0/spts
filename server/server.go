@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/z0rr0/spts/auth"
-	"github.com/z0rr0/spts/auth/token"
+	"github.com/z0rr0/spts/auth0"
+	"github.com/z0rr0/spts/auth0/token"
 	"github.com/z0rr0/spts/common"
 )
 
@@ -63,7 +63,7 @@ func (s *Server) Start(ctx context.Context) error {
 
 // ListenAndServe listens and serves incoming connections.
 func (s *Server) ListenAndServe(ctx context.Context) error {
-	tokens, err := auth.ServerTokens(s.Chunk)
+	tokens, err := auth0.ServerTokens(s.Chunk)
 	if err != nil {
 		return err
 	}
@@ -212,7 +212,7 @@ func handleConnection(ctx context.Context, conn net.Conn, tokens map[uint16]*tok
 	t.IP = remoteAddr.IP
 
 	// write handshake reply,
-	// auth.Verify already updated temporary token's parts
+	// auth0.Verify already updated temporary token's parts
 	header, err := t.Sign()
 	if err != nil {
 		return err // unexpected error

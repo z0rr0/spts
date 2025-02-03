@@ -9,8 +9,8 @@ import (
 	"net"
 	"time"
 
-	"github.com/z0rr0/spts/auth"
-	"github.com/z0rr0/spts/auth/token"
+	"github.com/z0rr0/spts/auth0"
+	"github.com/z0rr0/spts/auth0/token"
 	"github.com/z0rr0/spts/common"
 )
 
@@ -47,7 +47,7 @@ func (c *Client) Start(ctx context.Context) error {
 		pgWriter = progressWriter(ctx)
 	)
 
-	t, err := auth.ClientToken()
+	t, err := auth0.ClientToken()
 	if err != nil {
 		return err
 	}
