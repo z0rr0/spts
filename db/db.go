@@ -70,7 +70,7 @@ type UserStore struct {
 }
 
 // NewStorage creates a new user storage.
-func NewStorage(filename string) (*UserStore, error) {
+func NewStorage(filename string) (UserStorage, error) {
 	store := &UserStore{users: make(map[string]User), filename: filename}
 
 	if err := store.load(); err != nil {
