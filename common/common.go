@@ -29,39 +29,14 @@ const (
 )
 
 const (
-	// MaxPortNumber is a maximum port number.
-	MaxPortNumber uint64 = 65535
-
 	// TimeoutMultiplier is a multiplier for timeout to read all data.
 	TimeoutMultiplier time.Duration = 5
 )
 
 var (
-	// ErrInvalidPort is returned when the port number is invalid.
-	ErrInvalidPort = errors.New("invalid port number")
-
 	// ErrIPAddress is returned when the remote address is not available.
 	ErrIPAddress = errors.New("failed to get remote address")
 )
-
-// Starter is a program start interface.
-type Starter interface {
-	Start(ctx context.Context) error
-}
-
-// ParsePort parses a port number.
-func ParsePort(value string) (uint16, error) {
-	port, err := strconv.ParseUint(value, 10, 16)
-	if err != nil {
-		return 0, fmt.Errorf("parse port: %w", err)
-	}
-
-	if port < 1 || port > MaxPortNumber {
-		return 0, fmt.Errorf("port number must be in range [1, %d]", MaxPortNumber)
-	}
-
-	return uint16(port), nil
-}
 
 // Params is a program parameters.
 type Params struct {
@@ -71,19 +46,6 @@ type Params struct {
 	Clients int
 	Dot     bool
 	Chunk   uint32
-}
-
-// ServerMode returns true if the server mode is enabled.
-func (p *Params) ServerMode() bool {
-	return p.Timeout > 0
-}
-
-// NewLine returns a new line string by dot flag.
-func (p *Params) NewLine() string {
-	if p.Dot {
-		return "\n"
-	}
-	return ""
 }
 
 // Address returns a network address.

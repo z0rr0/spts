@@ -1,21 +1,17 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"log/slog"
 	"os"
-	"os/signal"
 	"runtime"
-	"strconv"
-	"syscall"
-	"time"
 
-	"github.com/z0rr0/spts/auth0/token"
-	"github.com/z0rr0/spts/client"
-	"github.com/z0rr0/spts/common"
-	"github.com/z0rr0/spts/server"
+	"github.com/z0rr0/spts/args"
+	auth2 "github.com/z0rr0/spts/auth"
+	"github.com/z0rr0/spts/config"
+	"github.com/z0rr0/spts/db"
+	"github.com/z0rr0/spts/user"
 )
 
 var (
@@ -31,19 +27,16 @@ var (
 
 func main() {
 	var (
-		debug   bool
-		version bool
-		dot     bool
+		debug      bool
+		production bool
+		version    bool
+		cfg        string
+		secret     string
+		userAction args.UserAction
 
-		port     uint16 = 28082
-		portHelp        = fmt.Sprintf("port to listen on (integer in range 1..%d)", common.MaxPortNumber)
-
-		host    = "localhost"
-		timeout = 3 * time.Second
-		clients = 1
-
-		chunk     = token.ChunkSize
-		chunkHelp = fmt.Sprintf("chunk size in kilobytes (integer in range 1..%d)", token.MaxChunkSize)
+		port   uint16 = 28082
+		host          = "localhost"
+		dbFile        = "spts.csv"
 	)
 
 	defer func() {
@@ -52,28 +45,26 @@ func main() {
 		}
 	}()
 
-	flag.DurationVar(&timeout, "timeout", timeout, "timeout for requests, run in server mode")
 	flag.StringVar(&host, "host", host, "host to listen on for server mode or connect to for client mode")
+	flag.StringVar(&cfg, "config", cfg, "config file name")
+	flag.StringVar(&dbFile, "db", dbFile, "database file name")
+	flag.StringVar(&secret, "secret", secret, "secret key")
 	flag.BoolVar(&version, "version", version, "print version and exit")
 	flag.BoolVar(&debug, "debug", debug, "enable debug mode")
-	flag.BoolVar(&dot, "dot", dot, "show dot progress output (for client mode)")
-	flag.IntVar(&clients, "clients", clients, "max clients (for server mode)")
-	flag.Func("port", portHelp, func(s string) error {
-		if p, err := common.ParsePort(s); err != nil {
+	flag.BoolVar(&production, "production", production, "enable production mode")
+	flag.Func("port", args.PortHelp(port), func(s string) error {
+		if p, err := args.Port(s); err != nil {
 			return err
 		} else {
 			port = p
 		}
 		return nil
 	})
-	flag.Func("chunk", chunkHelp, func(s string) error {
-		if c, err := strconv.ParseUint(s, 10, 32); err != nil {
-			return fmt.Errorf("parse chunk size: %w", err)
+	flag.Func("user", args.UserModHelp(), func(s string) error {
+		if ua, err := args.UserMod(s); err != nil {
+			return err
 		} else {
-			chunk = uint32(c)
-		}
-		if chunk < 1 {
-			return fmt.Errorf("chunk size must be greater than 0")
+			userAction = ua
 		}
 		return nil
 	})
@@ -87,56 +78,56 @@ func main() {
 		return
 	}
 
-	initLogger(debug)
+	cmdCfg := &config.Config{
+		Host:       host,
+		Port:       port,
+		Debug:      debug,
+		Production: production,
+		Database:   dbFile,
+		Secret:     secret,
+	}
+	c, err := config.New(cfg, cmdCfg)
+	if err != nil {
+		panic(err)
+	}
+
+	initLogger(c.Debug)
 	slog.Debug(
 		"starting",
 		"version", Version, "revision", Revision, "go", GoVersion, "buildDate", BuildDate,
-		"serverMode", timeout > 0, "host", host, "port", port, "clients", clients, "timeout", timeout,
+		"host", host, "port", port, "debug", debug, "production", production,
+		"userAction", userAction, "config", cfg, "dbFile", dbFile,
 	)
+	slog.Debug("config", "config", c)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	dbStorage, err := db.NewStorage(c.Database)
+	if err != nil {
+		panic(err)
+	}
 
-	sigint := make(chan os.Signal, 1)
-	signal.Notify(sigint, os.Signal(syscall.SIGTERM), os.Signal(syscall.SIGQUIT))
+	authConfig := auth2.Config{
+		IsProd:        c.Production,
+		GlobalSalt:    c.SaltBytes,
+		JWTSecret:     c.SecretBytes,
+		TokenDuration: c.TokenDuration.Timed(),
+	}
 
-	go func() {
-		signalValue := <-sigint
-		slog.Info("signal received", "signal", signalValue)
-		cancel()
-	}()
-
-	params := &common.Params{Host: host, Port: port, Timeout: timeout, Clients: clients, Dot: dot, Chunk: chunk}
-	if err := start(ctx, params); err != nil {
-		slog.Error("processing", "error", err)
-		os.Exit(1)
+	authenticator := auth2.NewAuthenticator(dbStorage, authConfig)
+	if userAction != 0 {
+		slog.Debug("user action", "action", userAction)
+		if err = user.Action(userAction, authenticator); err != nil {
+			panic(err)
+		}
+		return
 	}
 }
 
 func initLogger(debug bool) {
 	var level = slog.LevelInfo
+
 	if debug {
 		level = slog.LevelDebug
 	}
 
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level})))
-}
-
-func start(ctx context.Context, params *common.Params) error {
-	var (
-		s   common.Starter
-		err error
-	)
-
-	if params.ServerMode() {
-		s, err = server.New(params)
-	} else {
-		s, err = client.New(params)
-	}
-
-	if err != nil {
-		slog.Error("start", "error", err)
-		return err
-	}
-
-	return s.Start(ctx)
 }

@@ -122,7 +122,7 @@ func TestParsePort(t *testing.T) {
 	for i := range testCases {
 		tc := testCases[i]
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := ParsePort(tc.value)
+			got, err := FlagPort(tc.value)
 			if err != nil {
 				if !tc.withError {
 					t.Errorf("expected no error, got: %v", err)

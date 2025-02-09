@@ -1,0 +1,8 @@
+host = "localhost"
+port = 28082
+debug = true
+production = false
+database = "spts.csv"
+token_duration = "30m"
+secret = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+salt = "ZYXWVUTSRQPONMLKJIHGFEDCBAzyxwvutsrqponmlkjihgfedcba9876543210"
