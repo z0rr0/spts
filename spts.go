@@ -8,7 +8,7 @@ import (
 	"runtime"
 
 	"github.com/z0rr0/spts/args"
-	auth2 "github.com/z0rr0/spts/auth"
+	"github.com/z0rr0/spts/auth"
 	"github.com/z0rr0/spts/config"
 	"github.com/z0rr0/spts/db"
 	"github.com/z0rr0/spts/user"
@@ -105,14 +105,14 @@ func main() {
 		panic(err)
 	}
 
-	authConfig := auth2.Config{
+	authConfig := auth.Config{
 		IsProd:        c.Production,
 		GlobalSalt:    c.SaltBytes,
 		JWTSecret:     c.SecretBytes,
 		TokenDuration: c.TokenDuration.Timed(),
 	}
 
-	authenticator := auth2.NewAuthenticator(dbStorage, authConfig)
+	authenticator := auth.NewAuthenticator(dbStorage, authConfig)
 	if userAction != 0 {
 		slog.Debug("user action", "action", userAction)
 		if err = user.Action(userAction, authenticator); err != nil {

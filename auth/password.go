@@ -1,13 +1,14 @@
 package auth
 
 import (
+	"crypto/pbkdf2"
 	"crypto/rand"
+	"crypto/sha3"
 	"crypto/sha512"
 	"crypto/subtle"
 	"encoding/base64"
+	"fmt"
 	"log/slog"
-
-	"golang.org/x/crypto/pbkdf2"
 )
 
 const (
@@ -46,7 +47,10 @@ func (pm *PasswordManager) Hash(password string, userSalt string) (string, error
 
 	// mix global salt with user one
 	combinedSalt := append(pm.config.GlobalSalt, saltBytes...)
-	hash := pbkdf2.Key([]byte(password), combinedSalt, iterations, sha512.Size, sha512.New)
+	hash, err := pbkdf2.Key(sha3.New512, password, combinedSalt, iterations, sha512.Size)
+	if err != nil {
+		return "", fmt.Errorf("failed to hash password: %w", err)
+	}
 
 	return base64.StdEncoding.EncodeToString(hash), nil
 }

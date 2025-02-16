@@ -20,7 +20,7 @@ func Port(value string) (uint16, error) {
 	}
 
 	if port < 1 || port > MaxPortNumber {
-		return 0, fmt.Errorf("port number must be in range [1, %d]", MaxPortNumber)
+		return 0, errors.Join(ErrInvalidPort, fmt.Errorf("port number must be in range [1, %d]", MaxPortNumber))
 	}
 
 	return uint16(port), nil

@@ -1,12 +1,11 @@
 module github.com/z0rr0/spts
 
-go 1.23
+go 1.24
 
 require (
 	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/pelletier/go-toml/v2 v2.2.3
 	github.com/stretchr/testify v1.10.0
-	golang.org/x/crypto v0.32.0
 	golang.org/x/term v0.29.0
 )
 
